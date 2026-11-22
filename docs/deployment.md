@@ -278,6 +278,27 @@ sudo ufw enable
 - 单实例即可承载中小规模并发；如需水平扩展，应将会话与业务数据迁移到外部数据库，并使用共享对象存储保存上传文件。
 - 首次部署后访问域名，确认首页、注册登录、资料列表与 `/api/health` 正常。
 
+### Railway 部署（已验证上线）
+
+主站地址：`https://xueya-production.up.railway.app`
+
+已验证：10 项公网 E2E 全部通过（注册 → 实名自动通过 → 下单 → 演示支付 → 幂等回调 → 下载 → 401/403 边界），且重启后账号与订单仍在（持久卷生效）。
+
+部署要点：
+
+1. 新建 Project，Builder 选 Dockerfile；添加 Volume，Mount Path 填 `/app/data`。
+2. Variables 按 `deploy/public-demo.env` 录入，并额外设置 `PORT=3300`、`DATA_DIR=/app/data`。
+3. Settings → Networking 生成域名，目标端口填 `3300`，Healthcheck Path 为 `/api/health`。
+4. CLI 方式：`railway init --name xueya-market` → `railway add --service xueya` → `railway volume add --mount-path /app/data` → `railway up --ci` → `railway domain --port 3300`。
+
+三个已踩过的坑：
+
+- `.gitignore` / `.dockerignore` 里若写 `data`（不带斜杠），会连 `server/data/schools-official.json` 一起排除，容器启动报 `ENOENT`。必须写成 `/data`。
+- PaaS 的卷通常以 root 属主挂载，而镜像默认用 `node` 用户，会 `EACCES`。项目已提供 `deploy/docker-entrypoint.sh`，以 root 修正属主后 `su-exec node` 降权。
+- 平台会注入自己的 `PORT`，若与域名目标端口不一致会返回 502。本次固定 `PORT=3300` 与目标端口一致。
+
+另注：`railway.toml` 属于 Config as Code，官方标记为弃用（2026-12-01 前仍可用），后续可迁移到 `.railway/railway.ts`。
+
 ## 六、环境变量
 
 | 变量 | 默认值 | 说明 |
