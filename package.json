@@ -1,0 +1,37 @@
+{
+  "name": "xueya-market",
+  "version": "1.1.0",
+  "private": true,
+  "description": "学涯集市 · 高校学习资料交易平台",
+  "main": "server/index.js",
+  "scripts": {
+    "start": "node server/index.js",
+    "start:public": "node --env-file=deploy/public-demo.env server/index.js",
+    "payment:preflight": "node scripts/payment-preflight.mjs",
+    "payment:preflight:remote": "node scripts/payment-preflight.mjs --remote",
+    "reset": "node server/reset.js",
+    "backup": "node scripts/backup.mjs",
+    "firewall:open": "powershell -ExecutionPolicy Bypass -File scripts/allow-firewall.ps1",
+    "test": "node tests/smoke.mjs",
+    "test:unit": "node --test tests/auth-unit.test.cjs",
+    "test:data": "node --test tests/catalog-data.test.cjs",
+    "test:auth": "node tests/auth-flow.mjs",
+    "test:verify": "node tests/verify-flow.mjs",
+    "test:phone": "node tests/phone-auth.mjs",
+    "test:role": "node tests/role-flow.mjs",
+    "test:admin": "node tests/admin-security.mjs",
+    "test:payments": "node tests/payment-flow.mjs",
+    "test:audit": "node tests/audit-flow.mjs",
+    "test:chat": "node tests/seller-chat-flow.mjs",
+    "test:bargain": "node tests/bargain-flow.mjs",
+    "test:catalog": "node tests/catalog-ai-flow.mjs",
+    "test:production": "node tests/production-flow.mjs",
+    "test:plan": "node tests/plan-flow.mjs",
+    "test:release": "node tests/release-flow.mjs",
+    "test:permissions": "node tests/permissions.mjs",
+    "test:concurrency": "node tests/concurrency.mjs"
+  },
+  "engines": {
+    "node": ">=22.5"
+  }
+}

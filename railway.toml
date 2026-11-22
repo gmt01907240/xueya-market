@@ -1,0 +1,12 @@
+# Railway 部署配置（主站）
+# 说明：使用仓库根目录 Dockerfile 构建（node:24-alpine，满足 node:sqlite 要求）。
+# Volume 需在 Railway 面板添加：Mount Path = /app/data
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile"
+
+[deploy]
+healthcheckPath = "/api/health"
+healthcheckTimeout = 120
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 5

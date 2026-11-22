@@ -1,0 +1,35 @@
+services:
+  xueya:
+    build: .
+    image: xueya-market:latest
+    container_name: xueya
+    env_file:
+      - deploy/public-demo.env
+    environment:
+      # 数据卷挂载点，覆盖 env_file 中的相对路径
+      DATA_DIR: /app/data
+    ports:
+      - "3300:3300"
+    volumes:
+      - xueya-data:/app/data
+    restart: unless-stopped
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:' + (process.env.PORT || 3300) + '/api/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+volumes:
+  xueya-data:

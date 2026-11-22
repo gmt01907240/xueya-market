@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>管理员安全登录</title>
+<style>
+  :root {
+    color-scheme: dark;
+    --bg: #0b1220;
+    --panel: #111a2c;
+    --panel-2: #16213a;
+    --line: #233252;
+    --text: #e8eefc;
+    --muted: #8fa0c0;
+    --accent: #5b8cff;
+    --danger: #ff6b7a;
+    --ok: #39d98a;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    background: radial-gradient(1200px 600px at 20% 0%, #17264a 0%, var(--bg) 60%);
+    color: var(--text);
+    font-family: "PingFang SC", "Microsoft YaHei", system-ui, -apple-system, sans-serif;
+  }
+  .card {
+    width: 100%;
+    max-width: 420px;
+    background: linear-gradient(180deg, rgba(255,255,255,.03), rgba(255,255,255,0)) , var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 18px;
+    padding: 30px 28px;
+    box-shadow: 0 24px 70px rgba(0,0,0,.45);
+  }
+  .brand { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
+  .mark {
+    width: 34px; height: 34px; border-radius: 10px; flex: none;
+    display: grid; place-items: center;
+    background: linear-gradient(135deg, #3f6dff, #7aa2ff);
+    font-weight: 700; color: #fff;
+  }
+  h1 { font-size: 19px; margin: 0; letter-spacing: .4px; }
+  .sub { color: var(--muted); font-size: 12.5px; margin: 4px 0 22px; line-height: 1.6; }
+  .step[hidden] { display: none; }
+  label { display: block; font-size: 13px; color: var(--muted); margin: 14px 0 6px; }
+  input {
+    width: 100%;
+    padding: 11px 13px;
+    border-radius: 10px;
+    border: 1px solid var(--line);
+    background: var(--panel-2);
+    color: var(--text);
+    font-size: 14px;
+    outline: none;
+    transition: border-color .15s;
+  }
+  input:focus { border-color: var(--accent); }
+  button {
+    width: 100%;
+    margin-top: 20px;
+    padding: 12px;
+    border: 0;
+    border-radius: 10px;
+    background: linear-gradient(135deg, #3f6dff, #6f95ff);
+    color: #fff;
+    font-size: 14.5px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  button:disabled { opacity: .55; cursor: not-allowed; }
+  button.ghost {
+    background: transparent;
+    border: 1px solid var(--line);
+    color: var(--muted);
+    font-weight: 500;
+    margin-top: 10px;
+  }
+  .error {
+    margin-top: 14px;
+    padding: 10px 12px;
+    border-radius: 9px;
+    background: rgba(255,107,122,.1);
+    border: 1px solid rgba(255,107,122,.35);
+    color: var(--danger);
+    font-size: 12.5px;
+    line-height: 1.5;
+  }
+  .error[hidden] { display: none; }
+  .hint { color: var(--muted); font-size: 12.5px; line-height: 1.7; margin-top: 14px; }
+  .secret-box {
+    margin-top: 16px;
+    padding: 14px;
+    border-radius: 12px;
+    background: var(--panel-2);
+    border: 1px dashed var(--line);
+  }
+  .secret-box b { font-size: 12.5px; color: var(--muted); font-weight: 500; }
+  .secret {
+    margin: 8px 0 4px;
+    font-family: ui-monospace, Consolas, monospace;
+    font-size: 15px;
+    letter-spacing: 2px;
+    word-break: break-all;
+    color: #cfe0ff;
+  }
+  a.otp { color: #9db6ff; font-size: 12px; word-break: break-all; }
+  .foot { margin-top: 22px; color: #66789a; font-size: 11.5px; line-height: 1.7; text-align: center; }
+  .ok { color: var(--ok); }
+  .done { text-align: center; padding: 16px 0 4px; }
+  .done .big { font-size: 34px; margin-bottom: 10px; }
+</style>
+</head>
+<body>
+  <main class="card">
+    <div class="brand">
+      <div class="mark">安</div>
+      <h1>学涯集市 · 安全控制台</h1>
+    </div>
+    <p class="sub">管理员专用入口，需通过密码与动态令牌双重验证。所有操作均写入审计日志。</p>
+
+    <section class="step" id="step-login">
+      <form id="login-form" autocomplete="off">
+        <label for="account">管理员账号</label>
+        <input id="account" name="account" autocomplete="username" maxlength="72" placeholder="请输入管理员账号或邮箱" required>
+        <label for="password">密码</label>
+        <input id="password" name="password" type="password" autocomplete="current-password" maxlength="72" placeholder="请输入管理员密码" required>
+        <div class="error" id="login-error" hidden></div>
+        <button type="submit" id="login-submit">继续验证</button>
+      </form>
+      <div class="hint">仅限已授权的管理员访问。如非本人操作，请立即联系安全负责人。</div>
+    </section>
+
+    <section class="step" id="step-mfa" hidden>
+      <div id="enroll-box" hidden>
+        <div class="hint">首次登录需绑定动态令牌。请在 Authenticator（如 Google Authenticator、Microsoft Authenticator）中手动添加以下密钥：</div>
+        <div class="secret-box">
+          <b>绑定密钥</b>
+          <div class="secret" id="mfa-secret"></div>
+          <a class="otp" id="otpauth-link" href="#">在验证器应用中打开</a>
+        </div>
+      </div>
+      <form id="mfa-form" autocomplete="off">
+        <label for="code">动态验证码</label>
+        <input id="code" name="code" inputmode="numeric" maxlength="6" placeholder="6 位动态验证码" required>
+        <div class="error" id="mfa-error" hidden></div>
+        <button type="submit" id="mfa-submit">验证并登录</button>
+        <button type="button" class="ghost" id="mfa-back">返回重新登录</button>
+      </form>
+    </section>
+
+    <section class="step" id="step-password" hidden>
+      <div class="hint" id="password-tip">管理员密码已超过 90 天有效期，请先设置新密码。</div>
+      <form id="password-form" autocomplete="off">
+        <label for="oldPassword">原密码</label>
+        <input id="oldPassword" name="oldPassword" type="password" autocomplete="current-password" maxlength="72" required>
+        <label for="newPassword">新密码</label>
+        <input id="newPassword" name="newPassword" type="password" autocomplete="new-password" maxlength="72" placeholder="至少 12 位，含大小写、数字与符号" required>
+        <label for="confirmPassword">确认新密码</label>
+        <input id="confirmPassword" name="confirmPassword" type="password" autocomplete="new-password" maxlength="72" required>
+        <label for="pwdCode">动态验证码</label>
+        <input id="pwdCode" name="code" inputmode="numeric" maxlength="6" placeholder="6 位动态验证码" required>
+        <div class="error" id="password-error" hidden></div>
+        <button type="submit" id="password-submit">更新密码</button>
+      </form>
+    </section>
+
+    <section class="step done" id="step-done" hidden>
+      <div class="big ok">✓</div>
+      <div id="done-message">密码已更新，请重新登录。</div>
+      <button type="button" id="done-back">返回登录</button>
+    </section>
+
+    <div class="foot">本页面为独立安全入口，不提供任何站内导航。<br>登录行为受 IP 白名单、设备识别与异常登录告警保护。</div>
+  </main>
+  <script type="module" src="/js/admin-login.js"></script>
+</body>
+</html>
