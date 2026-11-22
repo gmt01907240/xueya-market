@@ -17,9 +17,13 @@ COPY public ./public
 COPY deploy ./deploy
 COPY scripts ./scripts
 
-RUN mkdir -p /app/data && chown -R node:node /app
+RUN apk add --no-cache su-exec \
+  && chmod +x /app/deploy/docker-entrypoint.sh \
+  && mkdir -p /app/data \
+  && chown -R node:node /app
 
-USER node
+# 入口脚本以 root 修正持久卷属主后降权到 node，兼容 PaaS 平台的 root 属主挂载
+ENTRYPOINT ["/app/deploy/docker-entrypoint.sh"]
 
 EXPOSE 3300
 STOPSIGNAL SIGTERM
