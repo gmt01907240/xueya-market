@@ -17,6 +17,7 @@
 | 赛道 | 校园生活 ——「造个校园新体验」 |
 | 作品形态 | 可运行的 Web 应用 + 单文件可体验 HTML（`demo.html`） |
 | 体验入口 | 主：https://xueya-production.up.railway.app ｜ 备用：`http://<公网IP>:3300` ｜ 离线：`public/demo.html` |
+| 源码仓库 | https://github.com/gmt01907240/xueya-market （私有，评审如需只读访问可开通临时协作者） |
 | 创作工具 | 全流程使用 TRAE Work / TRAE IDE 完成 |
 | 评分维度 | 应用价值 30% · 创新性 30% · 技术实现 20% · 交互体验 20% · 决赛表达 10% |
 

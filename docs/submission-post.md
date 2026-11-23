@@ -17,6 +17,7 @@
 | 作品名称 | 学涯集市 · 高校学习资料交易平台 |
 | 参赛赛道 | 校园生活 |
 | 体验地址 | 主：https://xueya-production.up.railway.app ｜ 备用：http://【云主机 IP】:3300 ｜ 离线：附件 demo.html |
+| 源码仓库 | https://github.com/gmt01907240/xueya-market （私有仓库，评审可申请只读访问） |
 | 演示账号 | 买家 student@xueya.cn / Student123456；卖家 seller@xueya.cn / Seller123456；管理员 admin@xueya.cn / Admin123456 |
 | 技术栈 | Node.js 原生 HTTP + node:sqlite + 原生 ES Modules，零第三方依赖 |
 | 创作工具 | TRAE Work / TRAE IDE |
