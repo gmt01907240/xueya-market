@@ -290,6 +290,9 @@ sudo ufw enable
 2. Variables 按 `deploy/public-demo.env` 录入，并额外设置 `PORT=3300`、`DATA_DIR=/app/data`。
 3. Settings → Networking 生成域名，目标端口填 `3300`，Healthcheck Path 为 `/api/health`。
 4. CLI 方式：`railway init --name xueya-market` → `railway add --service xueya` → `railway volume add --mount-path /app/data` → `railway up --ci` → `railway domain --port 3300`。
+5. GitHub 自动部署：Settings → Source 已连接私有仓库 `gmt01907240/xueya-market`，生产分支 `main`。已实测向 `main` 推送提交后，Railway 自动触发构建并上线（Deployments 中记录来源为 GitHub），无需再执行 `railway up`。
+
+> 说明：Settings → Source 区域若显示 `Auto deploy unavailable`，不影响基于分支推送的自动部署，实测 push 后仍会正常触发构建。
 
 三个已踩过的坑：
 
