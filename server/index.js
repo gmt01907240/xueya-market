@@ -75,6 +75,12 @@ if (runtime.SEED_DEMO && !runtime.PUBLIC_DEMO) {
   }
 }
 
+// 公网演示环境的一次性重置开关：仅 DEPLOY_PROFILE=public-demo 时生效，重置后应立即移除该变量
+if (runtime.PUBLIC_DEMO && String(process.env.DEMO_RESET_ON_BOOT || '') === '1') {
+  console.warn('\n  [演示维护] DEMO_RESET_ON_BOOT=1，正在清空演示数据并重新初始化\n');
+  require('./reset');
+}
+
 init();
 contentAudit.init();
 settlements.backfill();

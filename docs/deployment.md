@@ -324,6 +324,7 @@ sudo ufw enable
 | `UPLOAD_DAILY_QUOTA` | `20` | 单用户 24 小时资料上传配额，超限返回 429 |
 | `UPLOAD_MIN_FREE_MB` | `500` | 上传目录剩余空间下限，低于该值拒绝上传并返回 507、同时输出错误日志 |
 | `AUDIT_LOG_KEEP_DAYS` | `180` | 审计日志保留天数，启动时自动清理超期记录（最小 7 天） |
+| `DEMO_RESET_ON_BOOT` | 未设置 | 仅公网演示环境（`DEPLOY_PROFILE=public-demo`）有效：设为 `1` 时下次启动先清空数据库、上传文件与密钥并重新播种，用于录制/评审前重置；重置完成后必须立即移除 |
 | `INVITE_CODES` | 空 | 内测邀请码，格式 `BETA-001:50,BETA-002:100`，留空表示注册不需要邀请码 |
 | `FEATURE_REGISTRATION` 等 | 开启 | 设为 `off`/`false`/`0` 关闭对应功能；支持注册、上传、支付、规划、砍价、AI 客服、工单 |
 | `ADMIN_IP_ALLOWLIST` | 空 | 后台允许来源，支持 IP 与 CIDR，逗号分隔；留空时仅允许本机与私网，公网演示建议设为保留网段以彻底关闭后台 |
