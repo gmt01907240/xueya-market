@@ -104,7 +104,6 @@ function publicUser(row, includePrivate = false) {
     data.status = row.status;
     data.realName = row.real_name || '';
     data.studentNo = row.student_no || '';
-    data.schoolEmail = row.school_email || '';
     data.verifyMethod = row.verify_method || '';
     data.verifyStatus = row.verify_status || 'none';
     data.verifyNote = row.verify_note || '';
@@ -418,7 +417,7 @@ function meta(ctx) {
       human: { schedule: '暂未设置固定服务时间，后续将在公告中更新' },
       responseText: 'AI 客服实时响应 · 人工工单按序处理',
       faq: [
-        { q: '如何获得买卖权限？', a: '在「个人中心 → 实名认证」中提交真实姓名、所在高校、学号与校园邮箱；演示环境通过邮箱验证码与学号唯一性校验后即时通过，正式环境由管理员人工审核。' },
+        { q: '如何获得买卖权限？', a: '在「个人中心 → 实名认证」中填写真实姓名、所在高校与本人学号；系统校验三项信息一致且学号未被占用后即完成认证，无需验证校园邮箱。' },
         { q: '资料预览可以复制或下载吗？', a: '预览内容仅用于购买决策参考，系统已禁用复制、右键与下载，购买后可获得完整文件。' },
         { q: '推荐定价是如何计算的？', a: '平台根据院校公开资料与同类成交价建立官方价格标准库，上传时按院校、学科和类型自动匹配推荐价，卖家可在参考区间内调整。' },
         { q: '院校、学科和教师资源库怎么用？', a: '顶部导航进入「资源库」，三个模块各自支持关键词模糊搜索，结果实时返回，并可一键跳转资料市场查看对应资料。' },

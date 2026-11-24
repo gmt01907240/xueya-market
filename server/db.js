@@ -734,7 +734,7 @@ function ensureExperienceUser() {
   const id = seedUser(EXPERIENCE_DEMO.username, EXPERIENCE_DEMO.email, EXPERIENCE_DEMO.password, EXPERIENCE_DEMO.nickname, EXPERIENCE_DEMO.school, EXPERIENCE_DEMO.bio, 'user', 0, 0);
   run(
     `UPDATE users SET real_name = ?, student_no = ?, verify_status = 'verified', verify_note = '',
-       verify_method = '学号唯一性校验（演示自动审核）', verified_at = ? WHERE id = ?`,
+       verify_method = '姓名 + 院校 + 学号一致性校验（演示自动审核）', verified_at = ? WHERE id = ?`,
     EXPERIENCE_DEMO.nickname, 'DEMO0001', now(), id
   );
   return id;
@@ -879,7 +879,7 @@ function seed() {
     run(
       `UPDATE users SET real_name = ?, student_no = ?, verify_status = ?, verify_note = ?,
          verify_method = ?, verified_at = ? WHERE id = ?`,
-      realName, studentNo, status, '', status === 'verified' ? '校园邮箱 + 学号校验' : '',
+      realName, studentNo, status, '', status === 'verified' ? '姓名 + 院校 + 学号一致性校验' : '',
       status === 'verified' ? daysAgo(60, 10) : null, uid
     );
   }
@@ -1413,21 +1413,9 @@ function ensureAdminSecuritySeed() {
 
 function init() {
   db.exec(SCHEMA);
-  // 校园邮箱验证码：仅保存哈希，5 分钟有效，单邮箱有冷却与每日上限
-  db.exec(`CREATE TABLE IF NOT EXISTS email_codes (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    email TEXT NOT NULL,
-    code_hash TEXT NOT NULL,
-    attempts INTEGER NOT NULL DEFAULT 0,
-    used INTEGER NOT NULL DEFAULT 0,
-    expires_at INTEGER NOT NULL,
-    created_at INTEGER NOT NULL
-  )`);
-  db.exec('CREATE INDEX IF NOT EXISTS idx_email_codes_email ON email_codes(email, created_at DESC)');
   // 兼容旧库：幂等补充新增字段
   ensureColumn('users', 'real_name', "real_name TEXT NOT NULL DEFAULT ''");
   ensureColumn('users', 'student_no', "student_no TEXT NOT NULL DEFAULT ''");
-  ensureColumn('users', 'school_email', "school_email TEXT NOT NULL DEFAULT ''");
   ensureColumn('users', 'verify_method', "verify_method TEXT NOT NULL DEFAULT ''");
   ensureColumn('users', 'verify_status', "verify_status TEXT NOT NULL DEFAULT 'none'");
   ensureColumn('users', 'verify_note', "verify_note TEXT NOT NULL DEFAULT ''");
