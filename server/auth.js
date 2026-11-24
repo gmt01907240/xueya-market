@@ -16,7 +16,7 @@ function loadSecret() {
 }
 
 const SECRET = loadSecret();
-const TOKEN_TTL = 7 * 24 * 3600 * 1000;
+const TOKEN_TTL = 24 * 3600 * 1000;
 
 function hashPassword(password, salt) {
   const realSalt = salt || crypto.randomBytes(16).toString('hex');

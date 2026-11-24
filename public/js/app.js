@@ -2,44 +2,49 @@ import { bus, setRouteSignal } from './api.js';
 import { parseHash } from './util.js';
 import { state, bootSession, loadMeta, renderHeader, renderFooter, renderTabbar, openAuthModal, renderSupportFab, refreshSupportUnread, refreshMessageUnread } from './layout.js';
 import { icon, toast, emptyState, closeAllModals } from './components.js';
-import { renderHome } from './views/home.js';
-import { renderMarket } from './views/market.js';
-import { renderCatalog } from './views/catalog.js';
-import { renderMaterial } from './views/material.js';
-import { renderBargain, renderBargains } from './views/bargain.js';
-import { renderUpload } from './views/upload.js';
-import { renderWants } from './views/wants.js';
-import { renderMessages } from './views/messages.js';
-import { renderMe, renderSellerPublic } from './views/me.js';
-import { renderSeller } from './views/seller.js';
-import { renderAdmin } from './views/admin.js';
-import { renderInfo } from './views/info.js';
-import { renderSupport } from './views/support.js';
-import { renderPlan } from './views/plan.js';
+/* 路由级懒加载：首屏只加载当前页面，降低初始 JS 体积与首屏耗时 */
+const VIEW_LOADERS = {
+  home: () => import('./views/home.js').then((m) => m.renderHome),
+  market: () => import('./views/market.js').then((m) => m.renderMarket),
+  catalog: () => import('./views/catalog.js').then((m) => m.renderCatalog),
+  material: () => import('./views/material.js').then((m) => m.renderMaterial),
+  bargain: () => import('./views/bargain.js').then((m) => m.renderBargain),
+  bargains: () => import('./views/bargain.js').then((m) => m.renderBargains),
+  upload: () => import('./views/upload.js').then((m) => m.renderUpload),
+  wants: () => import('./views/wants.js').then((m) => m.renderWants),
+  messages: () => import('./views/messages.js').then((m) => m.renderMessages),
+  me: () => import('./views/me.js').then((m) => m.renderMe),
+  sellerPublic: () => import('./views/me.js').then((m) => m.renderSellerPublic),
+  seller: () => import('./views/seller.js').then((m) => m.renderSeller),
+  admin: () => import('./views/admin.js').then((m) => m.renderAdmin),
+  info: () => import('./views/info.js').then((m) => m.renderInfo),
+  support: () => import('./views/support.js').then((m) => m.renderSupport),
+  plan: () => import('./views/plan.js').then((m) => m.renderPlan)
+};
 
 const ROUTES = [
-  { path: '/', view: renderHome, active: 'home', tab: 'home', title: '首页' },
-  { path: '/market', view: renderMarket, active: 'market', tab: 'market', title: '资料市场' },
-  { path: '/catalog', view: renderCatalog, active: 'catalog', tab: 'market', title: '院校资源库' },
-  { path: '/plan', view: renderPlan, active: 'plan', tab: 'market', title: 'AI 学习规划' },
-  { path: '/material/:id', view: renderMaterial, active: 'market', tab: 'market', title: '资料详情' },
-  { path: '/bargain/:id', view: renderBargain, active: 'market', tab: 'market', title: '好友砍价' },
-  { path: '/bargains', view: renderBargains, tab: 'me', title: '我的砍价', auth: true },
-  { path: '/upload', view: renderUpload, active: 'seller', tab: 'me', title: '上传资料', auth: true },
-  { path: '/wants', view: renderWants, active: 'wants', tab: 'wants', title: '求购广场' },
-  { path: '/messages', view: renderMessages, tab: 'me', title: '消息中心', auth: true },
-  { path: '/me', view: renderMe, tab: 'me', title: '个人中心', auth: true },
-  { path: '/seller', view: renderSeller, active: 'seller', tab: 'me', title: '卖家中心', auth: true },
-  { path: '/admin', view: renderAdmin, title: '管理后台', auth: true, admin: true },
-  { path: '/support', view: renderSupport, active: 'support', tab: 'me', title: '客服中心' },
-  { path: '/u/:id', view: renderSellerPublic, title: '卖家主页' },
-  { path: '/about', view: renderInfo, title: '关于我们' },
-  { path: '/terms', view: renderInfo, title: '用户协议' },
-  { path: '/privacy', view: renderInfo, title: '隐私政策' },
-  { path: '/refund', view: renderInfo, title: '退款规则' },
-  { path: '/rules', view: renderInfo, title: '交易规则' },
-  { path: '/copyright', view: renderInfo, title: '版权保护' },
-  { path: '/help', view: renderInfo, title: '帮助中心' }
+  { path: '/', view: 'home', active: 'home', tab: 'home', title: '首页' },
+  { path: '/market', view: 'market', active: 'market', tab: 'market', title: '资料市场' },
+  { path: '/catalog', view: 'catalog', active: 'catalog', tab: 'market', title: '院校资源库' },
+  { path: '/plan', view: 'plan', active: 'plan', tab: 'market', title: 'AI 学习规划' },
+  { path: '/material/:id', view: 'material', active: 'market', tab: 'market', title: '资料详情' },
+  { path: '/bargain/:id', view: 'bargain', active: 'market', tab: 'market', title: '好友砍价' },
+  { path: '/bargains', view: 'bargains', tab: 'me', title: '我的砍价', auth: true },
+  { path: '/upload', view: 'upload', active: 'seller', tab: 'me', title: '上传资料', auth: true },
+  { path: '/wants', view: 'wants', active: 'wants', tab: 'wants', title: '求购广场' },
+  { path: '/messages', view: 'messages', tab: 'me', title: '消息中心', auth: true },
+  { path: '/me', view: 'me', tab: 'me', title: '个人中心', auth: true },
+  { path: '/seller', view: 'seller', active: 'seller', tab: 'me', title: '卖家中心', auth: true },
+  { path: '/admin', view: 'admin', title: '管理后台', auth: true, admin: true },
+  { path: '/support', view: 'support', active: 'support', tab: 'me', title: '客服中心' },
+  { path: '/u/:id', view: 'sellerPublic', title: '卖家主页' },
+  { path: '/about', view: 'info', title: '关于我们' },
+  { path: '/terms', view: 'info', title: '用户协议' },
+  { path: '/privacy', view: 'info', title: '隐私政策' },
+  { path: '/refund', view: 'info', title: '退款规则' },
+  { path: '/rules', view: 'info', title: '交易规则' },
+  { path: '/copyright', view: 'info', title: '版权保护' },
+  { path: '/help', view: 'info', title: '帮助中心' }
 ];
 
 const app = document.getElementById('app');
@@ -125,7 +130,11 @@ async function router() {
   viewRoot.className = 'route-root';
   app.replaceChildren(viewRoot);
   try {
-    const cleanup = await matched.view(viewRoot, { params, query, segments, path });
+    const load = VIEW_LOADERS[matched.view];
+    if (!load) throw new Error('页面加载器未注册');
+    const view = await load();
+    if (seq !== routeSeq || controller.signal.aborted) return;
+    const cleanup = await view(viewRoot, { params, query, segments, path });
     if (seq !== routeSeq || controller.signal.aborted) return;
     if (typeof cleanup === 'function') currentCleanup = cleanup;
     app.classList.remove('view-enter');

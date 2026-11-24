@@ -91,6 +91,30 @@ const RULES = [
     limit: envInt('RATE_LIMIT_PAY', 30),
     windowMs: 60 * 1000,
     test: (method, path) => method === 'POST' && /^\/api\/payments\/\d+\/simulate$/.test(path)
+  },
+  {
+    id: 'upload',
+    limit: envInt('RATE_LIMIT_UPLOAD', 20),
+    windowMs: 60 * 60 * 1000,
+    test: (method, path) => method === 'POST' && path === '/api/materials'
+  },
+  {
+    id: 'review',
+    limit: envInt('RATE_LIMIT_REVIEW', 20),
+    windowMs: 60 * 60 * 1000,
+    test: (method, path) => method === 'POST' && /^\/api\/materials\/\d+\/reviews$/.test(path)
+  },
+  {
+    id: 'ticket',
+    limit: envInt('RATE_LIMIT_TICKET', 10),
+    windowMs: 60 * 60 * 1000,
+    test: (method, path) => method === 'POST' && path === '/api/tickets'
+  },
+  {
+    id: 'bargain-assist',
+    limit: envInt('RATE_LIMIT_BARGAIN_ASSIST', 60),
+    windowMs: 60 * 1000,
+    test: (method, path) => method === 'POST' && /^\/api\/bargains\/\d+\/assist$/.test(path)
   }
 ];
 

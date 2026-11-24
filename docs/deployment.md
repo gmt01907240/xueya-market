@@ -148,16 +148,17 @@ docker run -d \
 
 ```bash
 docker run -d --name xueya \
-  --env-file deploy/public-demo.env \
   -e NODE_ENV=production \
   -e PUBLIC_DEMO=false -e AUTO_VERIFY=false -e SEED_DEMO=false \
   -e PAYMENT_MODE=live -e PAYMENT_LIVE_ENABLED=true \
+  -e ADMIN_MFA_SECRET=... \
   -e WECHAT_APP_ID=... -e WECHAT_MCH_ID=... ... \
   -e DATA_DIR=/app/data \
   -p 3300:3300 -v xueya-data:/app/data --restart unless-stopped xueya-market
 ```
 
-> `-e` 的优先级高于 `--env-file`，可逐项覆盖演示配置。生产模式下若支付通道未就绪，服务会拒绝启动，这是有意设计的安全闸门。
+> 容器默认加载 `deploy/base.env`（通用配置），演示配置只在 `DEPLOY_PROFILE=public-demo` 或 `PUBLIC_DEMO=true` 时启用。生产环境不要设置这两个变量。
+> 生产环境必须通过 `ADMIN_MFA_SECRET` 预置管理员 TOTP 密钥；未预置时管理员首次登录会被拒绝，禁止自行绑定。`-e` 的优先级高于 `--env-file`，可逐项覆盖。生产模式下若支付通道未就绪，服务会拒绝启动，这是有意设计的安全闸门。
 
 ## 四、云主机部署（Ubuntu + systemd + Nginx）
 
@@ -269,7 +270,7 @@ sudo ufw enable
 3. 暴露端口 `3300`（平台若通过 `PORT` 注入端口，服务会自动使用该值）。
 4. **挂载持久化磁盘到 `/app/data`**（SQLite、上传文件与 `secret.key` 都在此目录）；这是上线硬性前提。
 5. 健康检查路径填写 `/api/health`。
-6. 公开演示：`--env-file deploy/public-demo.env` 或按该文件逐项配置环境变量；正式生产：`NODE_ENV=production` + 真实支付参数（见上节）。
+6. 公开演示：设置 `DEPLOY_PROFILE=public-demo`（容器入口自动加载 `deploy/public-demo.env`），或按该文件逐项配置环境变量；正式生产：不设该变量（默认 `deploy/base.env`），配置 `NODE_ENV=production`、`ADMIN_MFA_SECRET` 与真实支付参数（见上节）。
 
 注意事项：
 

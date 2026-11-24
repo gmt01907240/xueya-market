@@ -111,13 +111,13 @@ describe('登录 token 签发与校验', () => {
     assert.equal(payload.uid, 42);
   });
 
-  test('有效期约为 7 天', () => {
+  test('有效期约为 24 小时', () => {
     const before = Date.now();
     const payload = verifyToken(signToken(1));
     const after = Date.now();
-    const sevenDays = 7 * 24 * 3600 * 1000;
-    assert.ok(payload.exp >= before + sevenDays);
-    assert.ok(payload.exp <= after + sevenDays + 1000);
+    const oneDay = 24 * 3600 * 1000;
+    assert.ok(payload.exp >= before + oneDay);
+    assert.ok(payload.exp <= after + oneDay + 1000);
   });
 
   test('不同用户的 token 相互独立', () => {

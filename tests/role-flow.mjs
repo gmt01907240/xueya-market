@@ -152,7 +152,7 @@ try {
       description: '用于验证个人用户同时具备买家与卖家权限的测试资料，内容为高等数学复习要点整理。',
       category: '考研资料',
       school: '武汉大学',
-      subject: '高等数学',
+      subject: '数学',
       teacher: '',
       course: '高等数学',
       price: 9.9,

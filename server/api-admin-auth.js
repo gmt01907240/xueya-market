@@ -146,7 +146,12 @@ function login(ctx) {
   let secret = String(user.admin_mfa_secret || '').trim();
   let enroll = false;
   if (!secret) {
-    secret = String(process.env.ADMIN_MFA_SECRET || '').trim() || security.generateMfaSecret();
+    const preset = String(process.env.ADMIN_MFA_SECRET || '').trim();
+    // 生产环境必须预置密钥，避免首次登录者自行绑定 TOTP 绕过既定的双因素策略
+    if (!preset && runtime.IS_PRODUCTION) {
+      return fail(ctx.res, 500, '管理员 MFA 密钥未预置，请配置 ADMIN_MFA_SECRET 后重试');
+    }
+    secret = preset || security.generateMfaSecret();
     run('UPDATE users SET admin_mfa_secret = ? WHERE id = ?', secret, user.id);
     enroll = !user.admin_mfa_enabled_at;
   }

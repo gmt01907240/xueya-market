@@ -10,6 +10,13 @@ const adminSecurity = require('./admin-security');
 const db = new DatabaseSync(DB_FILE);
 db.exec('PRAGMA journal_mode = WAL;');
 db.exec('PRAGMA foreign_keys = ON;');
+// 并发写入时等待锁而不是立即失败，避免高频接口出现 SQLITE_BUSY
+db.exec('PRAGMA busy_timeout = 5000;');
+
+// 空闲时定期截断 WAL，防止长期运行后 WAL 文件持续增长
+setInterval(() => {
+  try { db.exec('PRAGMA wal_checkpoint(TRUNCATE);'); } catch { /* 写入繁忙时跳过 */ }
+}, 30 * 60 * 1000).unref();
 
 function all(sql, ...params) {
   return db.prepare(sql).all(...params);
@@ -1421,6 +1428,7 @@ function init() {
   ensureColumn('materials', 'teacher', "teacher TEXT NOT NULL DEFAULT ''");
   ensureColumn('materials', 'preview_text', "preview_text TEXT NOT NULL DEFAULT ''");
   ensureColumn('materials', 'preview_ratio', 'preview_ratio INTEGER NOT NULL DEFAULT 15');
+  ensureColumn('materials', 'content_chars', 'content_chars INTEGER NOT NULL DEFAULT 0');
   ensureColumn('materials', 'price_source', "price_source TEXT NOT NULL DEFAULT 'seller'");
   ensureColumn('materials', 'price_note', "price_note TEXT NOT NULL DEFAULT ''");
   ensureColumn('materials', 'audit_verdict', "audit_verdict TEXT NOT NULL DEFAULT ''");

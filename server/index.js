@@ -101,13 +101,35 @@ add('GET', '/api/health', (ctx) => {
     database,
     paymentMode: gateway.mode(),
     paymentReady: gateway.readiness().ready,
+    demo: runtime.PUBLIC_DEMO,
     uptime: Math.round(process.uptime()),
     time: new Date().toISOString()
   });
 });
-/* 运行指标：仅返回聚合计数，不含任何用户身份信息，供外部探针与监控读取 */
+/* 运行指标：仅返回聚合计数，不含任何用户身份信息。需令牌或受信网络访问。 */
 add('GET', '/api/metrics', (ctx) => {
-  sendJson(ctx.res, 200, { ...metrics.snapshot(), environment: runtime.info() });
+  const expected = String(process.env.METRICS_TOKEN || '').trim();
+  if (expected) {
+    const header = String(ctx.req.headers.authorization || '');
+    const supplied = header.toLowerCase().startsWith('bearer ')
+      ? header.slice(7).trim()
+      : String(ctx.query.token || '').trim();
+    if (!secureEqual(supplied, expected)) return fail(ctx.res, 401, '指标访问令牌无效');
+    return sendJson(ctx.res, 200, { ...metrics.snapshot(), environment: runtime.info() });
+  }
+  if (runtime.adminAllowed(rateLimit.clientIp(ctx.req))) {
+    return sendJson(ctx.res, 200, { ...metrics.snapshot(), environment: runtime.info() });
+  }
+  // 公开演示环境仅暴露健康类聚合字段，避免公网读取完整运行指标
+  if (runtime.PUBLIC_DEMO) {
+    return sendJson(ctx.res, 200, {
+      service: 'xueya-market',
+      status: 'ok',
+      uptime: Math.round(process.uptime()),
+      time: new Date().toISOString()
+    });
+  }
+  return fail(ctx.res, 403, '指标接口仅限受信网络访问');
 });
 add('GET', '/api/meta', authApi.meta);
 add('GET', '/api/sellers/:id', authApi.sellerProfile);
@@ -301,6 +323,14 @@ const ADMIN_LOGIN_PATH = (() => {
   return withSlash.replace(/\/+$/, '') || '/ops-login';
 })();
 
+/* 定时安全比较，避免令牌校验被逐字节计时攻击 */
+function secureEqual(input, expected) {
+  const a = Buffer.from(String(input || ''));
+  const b = Buffer.from(String(expected || ''));
+  if (!a.length || a.length !== b.length) return false;
+  return crypto.timingSafeEqual(a, b);
+}
+
 /* 进程级兜底：未捕获异常记录结构化日志后退出，避免进程带病运行或静默消失 */
 process.on('unhandledRejection', (err) => {
   console.error(JSON.stringify({
@@ -325,6 +355,11 @@ const server = http.createServer(async (req, res) => {
   res.setHeader('X-Frame-Options', 'DENY');
   res.setHeader('Referrer-Policy', 'same-origin');
   res.setHeader('Permissions-Policy', 'geolocation=(), microphone=(), camera=()');
+  // HTTPS（含反向代理终止 TLS）下启用 HSTS，防止降级到明文 HTTP
+  const forwardedProto = String(req.headers['x-forwarded-proto'] || '').split(',')[0].trim().toLowerCase();
+  if (req.socket.encrypted || forwardedProto === 'https') {
+    res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+  }
 
   let url;
   try {

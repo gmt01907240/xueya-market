@@ -3,7 +3,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
-const { all, get, run, now, CATEGORIES, buildPreview } = require('./db');
+const { all, get, run, now, CATEGORIES, SCHOOLS, SUBJECTS, buildPreview } = require('./db');
 const { UPLOAD_DIR } = require('./paths');
 const { sendJson, fail } = require('./http');
 const { requireVerified, isVerified } = require('./guard');
@@ -11,6 +11,10 @@ const contentAudit = require('./content-audit');
 const runtime = require('./runtime-config');
 
 const ALLOWED_EXT = ['pdf', 'doc', 'docx', 'ppt', 'pptx', 'zip', 'rar', 'txt', 'md', 'xls', 'xlsx', 'png', 'jpg', 'jpeg'];
+
+const SCHOOL_SET = new Set(SCHOOLS);
+const SUBJECT_SET = new Set(SUBJECTS);
+const AUDIT_TEXT_LIMIT = 200000;
 
 const ZIP_SIG = [[0x50, 0x4b, 0x03, 0x04], [0x50, 0x4b, 0x05, 0x06], [0x50, 0x4b, 0x07, 0x08]];
 const SIGNATURES = {
@@ -66,7 +70,7 @@ function serialize(m, user) {
     price: m.price_cents,
     priceSource: m.price_source || 'seller',
     priceNote: m.price_note || '',
-    previewRatio: m.preview_ratio || 15,
+    previewRatio: actualPreviewRatio(m, (m.preview_text || '').length),
     hasPreview: !!m.preview_text,
     fileName: m.file_name,
     fileSize: m.file_size,
@@ -111,7 +115,7 @@ function buildAuditText(fields, fullText) {
     fields.title, fields.description, fields.category, fields.subject, fields.teacher,
     fields.course, Array.isArray(fields.tags) ? fields.tags.join('、') : fields.tags,
     fields.fileName, fullText
-  ].filter(Boolean).join('\n');
+  ].filter(Boolean).join('\n').slice(0, AUDIT_TEXT_LIMIT);
 }
 
 function auditStatusOf(result) {
@@ -120,7 +124,16 @@ function auditStatusOf(result) {
   return 'pass';
 }
 
-function auditMessage(result) {
+function auditMessage(result, demo = false) {
+  if (demo) {
+    if (result.verdict === 'review') {
+      return '资料已提交并自动上架；自动检测发现疑似风险内容，已转人工复核';
+    }
+    if (result.verdict === 'error') {
+      return '资料已提交并自动上架；自动检测服务暂不可用，已转人工复核';
+    }
+    return '资料已提交，演示环境免人工审核，已直接上架';
+  }
   if (result.verdict === 'review') {
     return '资料已提交，自动检测发现疑似风险内容，已转人工复核（通常 24 小时内完成）';
   }
@@ -153,31 +166,44 @@ const BASE_SELECT = `
 `;
 
 function list(ctx) {
-  const q = String(ctx.query.q || '').trim();
+  const q = String(ctx.query.q || '').trim().slice(0, 50);
   const category = String(ctx.query.category || '').trim();
   const school = String(ctx.query.school || '').trim();
   const subject = String(ctx.query.subject || '').trim();
   const teacher = String(ctx.query.teacher || '').trim();
   const price = String(ctx.query.price || '').trim();
   const sort = String(ctx.query.sort || 'hot');
-  const page = Math.max(1, Number(ctx.query.page) || 1);
+  const page = Math.min(100, Math.max(1, Number(ctx.query.page) || 1));
   const pageSize = Math.min(24, Math.max(1, Number(ctx.query.pageSize) || 9));
 
-  const where = [`m.status = 'approved'`];
-  const params = [];
+  // 过滤条件结构化保存，便于主查询与各分面统计复用同一套条件
+  const filters = [];
   if (q) {
-    where.push('(m.title LIKE ? OR m.description LIKE ? OR m.tags LIKE ? OR m.course LIKE ? OR m.subject LIKE ? OR m.teacher LIKE ?)');
-    const like = `%${q}%`;
-    params.push(like, like, like, like, like, like);
+    filters.push({
+      key: 'q',
+      sql: '(m.title LIKE ? OR m.description LIKE ? OR m.tags LIKE ? OR m.course LIKE ? OR m.subject LIKE ? OR m.teacher LIKE ?)',
+      params: Array(6).fill(`%${q}%`)
+    });
   }
-  if (category) { where.push('m.category = ?'); params.push(category); }
-  if (school) { where.push('m.school = ?'); params.push(school); }
-  if (subject) { where.push('m.subject = ?'); params.push(subject); }
-  if (teacher) { where.push('m.teacher = ?'); params.push(teacher); }
-  if (price === 'free') where.push('m.price_cents = 0');
-  if (price === 'low') where.push('m.price_cents > 0 AND m.price_cents <= 1500');
-  if (price === 'mid') where.push('m.price_cents > 1500 AND m.price_cents <= 3000');
-  if (price === 'high') where.push('m.price_cents > 3000');
+  if (category) filters.push({ key: 'category', sql: 'm.category = ?', params: [category] });
+  if (school) filters.push({ key: 'school', sql: 'm.school = ?', params: [school] });
+  if (subject) filters.push({ key: 'subject', sql: 'm.subject = ?', params: [subject] });
+  if (teacher) filters.push({ key: 'teacher', sql: 'm.teacher = ?', params: [teacher] });
+  if (price === 'free') filters.push({ key: 'price', sql: 'm.price_cents = 0', params: [] });
+  if (price === 'low') filters.push({ key: 'price', sql: 'm.price_cents > 0 AND m.price_cents <= 1500', params: [] });
+  if (price === 'mid') filters.push({ key: 'price', sql: 'm.price_cents > 1500 AND m.price_cents <= 3000', params: [] });
+  if (price === 'high') filters.push({ key: 'price', sql: 'm.price_cents > 3000', params: [] });
+
+  function whereFor(excludeKey) {
+    const parts = [`m.status = 'approved'`];
+    const params = [];
+    for (const f of filters) {
+      if (f.key === excludeKey) continue;
+      parts.push(f.sql);
+      params.push(...f.params);
+    }
+    return { sql: `WHERE ${parts.join(' AND ')}`, params };
+  }
 
   const orderMap = {
     hot: 'm.downloads DESC, m.views DESC',
@@ -187,21 +213,31 @@ function list(ctx) {
     price_desc: 'm.price_cents DESC, m.created_at DESC'
   };
   const order = orderMap[sort] || orderMap.hot;
-  const whereSql = `WHERE ${where.join(' AND ')}`;
-  const total = get(`SELECT COUNT(*) AS c FROM materials m ${whereSql}`, ...params).c;
+  const where = whereFor(null);
+  const total = get(`SELECT COUNT(*) AS c FROM materials m ${where.sql}`, ...where.params).c;
   const rows = all(
-    `${BASE_SELECT} ${whereSql} ORDER BY ${order} LIMIT ? OFFSET ?`,
-    ...params, pageSize, (page - 1) * pageSize
+    `${BASE_SELECT} ${where.sql} ORDER BY ${order} LIMIT ? OFFSET ?`,
+    ...where.params, pageSize, (page - 1) * pageSize
   );
 
+  // 分面计数应用除自身维度以外的当前筛选条件，避免切换维度后计数失真
+  const schoolWhere = whereFor('school');
   const facets = all(
-    `SELECT school, COUNT(*) AS count FROM materials WHERE status = 'approved' AND school != '' GROUP BY school ORDER BY count DESC LIMIT 10`
+    `SELECT m.school AS school, COUNT(*) AS count FROM materials m ${schoolWhere.sql} AND m.school != ''
+     GROUP BY m.school ORDER BY count DESC LIMIT 10`,
+    ...schoolWhere.params
   );
+  const subjectWhere = whereFor('subject');
   const subjectFacets = all(
-    `SELECT subject, COUNT(*) AS count FROM materials WHERE status = 'approved' AND subject != '' GROUP BY subject ORDER BY count DESC LIMIT 30`
+    `SELECT m.subject AS subject, COUNT(*) AS count FROM materials m ${subjectWhere.sql} AND m.subject != ''
+     GROUP BY m.subject ORDER BY count DESC LIMIT 30`,
+    ...subjectWhere.params
   );
+  const teacherWhere = whereFor('teacher');
   const teacherFacets = all(
-    `SELECT teacher, COUNT(*) AS count FROM materials WHERE status = 'approved' AND teacher != '' GROUP BY teacher ORDER BY count DESC LIMIT 30`
+    `SELECT m.teacher AS teacher, COUNT(*) AS count FROM materials m ${teacherWhere.sql} AND m.teacher != ''
+     GROUP BY m.teacher ORDER BY count DESC LIMIT 30`,
+    ...teacherWhere.params
   );
   sendJson(ctx.res, 200, {
     items: rows.map((m) => serialize(m, ctx.user)),
@@ -213,6 +249,16 @@ function list(ctx) {
     subjectFacets,
     teacherFacets
   });
+}
+
+/** 试读比例按实际展示字数与原文总字数计算，旧数据缺少总字数时回退到卖家设定值 */
+function actualPreviewRatio(m, previewLength) {
+  const fallback = Math.min(20, Math.max(1, Number(m.preview_ratio) || 15));
+  const base = Number(m.content_chars) || 0;
+  if (base > 0 && previewLength > 0) {
+    return Math.min(20, Math.max(1, Math.round((previewLength / base) * 100)));
+  }
+  return fallback;
 }
 
 function detail(ctx) {
@@ -249,6 +295,7 @@ function detail(ctx) {
     id, row.category, row.school, row.category
   );
 
+  const previewContent = previewText(row);
   sendJson(ctx.res, 200, {
     material: serialize(row, ctx.user),
     reviews: reviews.map((r) => ({
@@ -265,8 +312,8 @@ function detail(ctx) {
     related: related.map((m) => serialize(m)),
     preview: {
       available: !!(row.preview_text || row.description),
-      ratio: row.preview_ratio || 15,
-      chars: (row.preview_text || '').length,
+      ratio: actualPreviewRatio(row, previewContent.length),
+      chars: previewContent.length,
       locked: !purchased && !isOwner && !isAdmin
     }
   });
@@ -294,12 +341,13 @@ function preview(ctx) {
       id, ctx.user.id
     )
   );
-  const text = previewText(row).slice(0, 3000);
+  const fullPreview = previewText(row);
+  const text = fullPreview.slice(0, 3000);
   ctx.res.setHeader('Cache-Control', 'no-store');
   sendJson(ctx.res, 200, {
     id: row.id,
     title: row.title,
-    ratio: row.preview_ratio || 15,
+    ratio: actualPreviewRatio(row, fullPreview.length),
     chars: text.length,
     text,
     unlocked: purchased || isOwner || isAdmin,
@@ -362,10 +410,11 @@ function extractText(buf, ext) {
   return printable / Math.max(1, sample.length) > 0.95 ? sample.toString('utf8') : '';
 }
 
-function makePreview({ title, description, category, school, subject, teacher }, fullText) {
+function makePreview({ title, description, category, school, subject, teacher, previewRatio }, fullText) {
   const fallback = buildPreview({ title, desc: description, category, school }, subject, teacher);
   if (!fullText || fullText.trim().length < 200) return fallback;
-  const limit = Math.min(1500, Math.max(200, Math.round(fullText.length * 0.15)));
+  const ratio = Math.min(20, Math.max(10, Number(previewRatio) || 15));
+  const limit = Math.min(1500, Math.max(200, Math.round((fullText.length * ratio) / 100)));
   return [
     `《${title}》`,
     `${school || '通用'} ｜ 学科：${subject || '其他'} ｜ 授课老师：${teacher || '—'} ｜ 类型：${category}`,
@@ -377,7 +426,7 @@ function makePreview({ title, description, category, school, subject, teacher },
   ].join('\n');
 }
 
-function create(ctx) {
+async function create(ctx) {
   if (!runtime.feature('upload')) return fail(ctx.res, 403, '资料上传暂未开放，请关注平台公告');
   if (!requireVerified(ctx, '发布资料')) return;
   const body = ctx.body;
@@ -397,8 +446,12 @@ function create(ctx) {
   if (title.length < 4 || title.length > 80) return fail(ctx.res, 400, '资料标题需为 4—80 个字符');
   if (description.length < 20) return fail(ctx.res, 400, '资料介绍至少 20 个字，方便同学判断是否适合自己');
   if (!CATEGORIES.includes(category)) return fail(ctx.res, 400, '请选择正确的资料分类');
+  if (!school) return fail(ctx.res, 400, '请选择资料所属院校');
+  if (!SCHOOL_SET.has(school)) return fail(ctx.res, 400, '请选择资源库中的院校');
   if (!subject) return fail(ctx.res, 400, '请选择资料所属学科');
+  if (!SUBJECT_SET.has(subject)) return fail(ctx.res, 400, '请选择资源库中的学科');
   if (teacher.length > 30) return fail(ctx.res, 400, '授课老师姓名过长');
+  if (course.length > 40) return fail(ctx.res, 400, '课程名称不能超过 40 个字符');
   if (!Number.isFinite(price) || price < 0 || price > 999) return fail(ctx.res, 400, '价格需在 0—999 元之间');
   if (!fileName || !fileData) return fail(ctx.res, 400, '请上传资料文件');
 
@@ -426,24 +479,32 @@ function create(ctx) {
   }
 
   const stored = `${Date.now()}-${crypto.randomBytes(4).toString('hex')}.${ext}`;
-  fs.writeFileSync(path.join(UPLOAD_DIR, stored), buf);
+  try {
+    await fs.promises.writeFile(path.join(UPLOAD_DIR, stored), buf);
+  } catch (err) {
+    console.error('[materials] 资料文件写入失败', err.message);
+    return fail(ctx.res, 500, '文件保存失败，请稍后重试');
+  }
 
-  const preview = makePreview({ title, description, category, school, subject, teacher }, fullText);
+  const preview = makePreview({ title, description, category, school, subject, teacher, previewRatio }, fullText);
+  // 公开演示环境无人可执行后台审核，上传即上架；正式环境仍走人工审核
+  const initialStatus = runtime.PUBLIC_DEMO ? 'approved' : 'pending';
   const ts = now();
   const info = run(
     `INSERT INTO materials (seller_id, title, description, category, school, subject, teacher, course,
        preview_text, preview_ratio, price_source, price_note, price_cents, file_name, file_path, file_size,
-       tags, status, reject_reason, audit_verdict, audit_score, audit_hits, audit_status, audit_at, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'seller', '', ?, ?, ?, ?, ?, 'pending', '', ?, ?, ?, ?, ?, ?, ?)`,
+       tags, status, reject_reason, audit_verdict, audit_score, audit_hits, audit_status, audit_at,
+       content_chars, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'seller', '', ?, ?, ?, ?, ?, ?, '', ?, ?, ?, ?, ?, ?, ?, ?)`,
     ctx.user.id, title, description, category, school, subject, teacher, course,
-    preview, previewRatio, Math.round(price * 100), fileName, stored, buf.length, tags.join(','),
-    audit.verdict, audit.score, auditHitsJson(audit), auditStatusOf(audit), ts, ts, ts
+    preview, previewRatio, Math.round(price * 100), fileName, stored, buf.length, tags.join(','), initialStatus,
+    audit.verdict, audit.score, auditHitsJson(audit), auditStatusOf(audit), ts, fullText.length, ts, ts
   );
   const id = Number(info.lastInsertRowid);
   contentAudit.record({ targetId: id, userId: ctx.user.id, action: 'submit', text: auditText, result: audit });
   sendJson(ctx.res, 201, {
     id,
-    message: auditMessage(audit),
+    message: auditMessage(audit, runtime.PUBLIC_DEMO),
     audit: {
       verdict: audit.verdict,
       score: audit.score,
@@ -453,7 +514,7 @@ function create(ctx) {
   });
 }
 
-function update(ctx) {
+async function update(ctx) {
   const id = Number(ctx.params.id);
   const row = get('SELECT * FROM materials WHERE id = ?', id);
   if (!row) return fail(ctx.res, 404, '资料不存在');
@@ -468,6 +529,7 @@ function update(ctx) {
   const subject = String(body.subject ?? row.subject ?? '').trim();
   const teacher = String(body.teacher ?? row.teacher ?? '').trim();
   const course = String(body.course ?? row.course).trim();
+  const previewRatio = Math.min(20, Math.max(10, Number(body.previewRatio ?? row.preview_ratio) || 15));
   const price = body.price === undefined ? row.price_cents / 100 : Number(body.price);
   const tags = body.tags === undefined
     ? row.tags
@@ -476,7 +538,11 @@ function update(ctx) {
   if (title.length < 4 || title.length > 80) return fail(ctx.res, 400, '资料标题需为 4—80 个字符');
   if (description.length < 20) return fail(ctx.res, 400, '资料介绍至少 20 个字');
   if (!CATEGORIES.includes(category)) return fail(ctx.res, 400, '请选择正确的资料分类');
+  if (!school) return fail(ctx.res, 400, '请选择资料所属院校');
+  if (!SCHOOL_SET.has(school)) return fail(ctx.res, 400, '请选择资源库中的院校');
   if (!subject) return fail(ctx.res, 400, '请选择资料所属学科');
+  if (!SUBJECT_SET.has(subject)) return fail(ctx.res, 400, '请选择资源库中的学科');
+  if (course.length > 40) return fail(ctx.res, 400, '课程名称不能超过 40 个字符');
   if (!Number.isFinite(price) || price < 0 || price > 999) return fail(ctx.res, 400, '价格需在 0—999 元之间');
 
   const priceCents = Math.round(price * 100);
@@ -488,12 +554,15 @@ function update(ctx) {
   let fullText = '';
   if (row.file_path) {
     const p = path.join(UPLOAD_DIR, path.basename(row.file_path));
-    if (fs.existsSync(p)) {
+    try {
+      const fileBuf = await fs.promises.readFile(p);
       const ext = path.extname(row.file_path).slice(1).toLowerCase();
-      fullText = extractText(fs.readFileSync(p), ext);
+      fullText = extractText(fileBuf, ext);
+    } catch {
+      fullText = '';
     }
   }
-  const preview = makePreview({ title, description, category, school, subject, teacher }, fullText);
+  const preview = makePreview({ title, description, category, school, subject, teacher, previewRatio }, fullText);
 
   const auditText = buildAuditText({ title, description, category, subject, teacher, course, tags, fileName: row.file_name }, fullText);
   const audit = contentAudit.safeInspect(auditText);
@@ -502,18 +571,21 @@ function update(ctx) {
     return rejectByAudit(ctx, audit);
   }
 
+  // 公开演示环境无人可执行后台审核，编辑后维持上架；正式环境重新进入待审核
+  const nextStatus = runtime.PUBLIC_DEMO ? 'approved' : 'pending';
   run(
     `UPDATE materials SET title = ?, description = ?, category = ?, school = ?, subject = ?, teacher = ?, course = ?,
-       preview_text = ?, price_cents = ?, price_source = ?, price_note = ?, tags = ?,
-       status = 'pending', reject_reason = '', audit_verdict = ?, audit_score = ?, audit_hits = ?, audit_status = ?, audit_at = ?,
-       updated_at = ? WHERE id = ?`,
+       preview_text = ?, preview_ratio = ?, price_cents = ?, price_source = ?, price_note = ?, tags = ?,
+       status = ?, reject_reason = '', audit_verdict = ?, audit_score = ?, audit_hits = ?, audit_status = ?, audit_at = ?,
+       content_chars = ?, updated_at = ? WHERE id = ?`,
     title, description, category, school, subject, teacher, course,
-    preview, priceCents, priceSource, priceNote, tags,
-    audit.verdict, audit.score, auditHitsJson(audit), auditStatusOf(audit), now(), now(), id
+    preview, previewRatio, priceCents, priceSource, priceNote, tags,
+    nextStatus, audit.verdict, audit.score, auditHitsJson(audit), auditStatusOf(audit), now(),
+    fullText.length, now(), id
   );
   contentAudit.record({ targetId: id, userId: ctx.user.id, action: 'update', text: auditText, result: audit });
   sendJson(ctx.res, 200, {
-    message: `修改已保存，${auditMessage(audit)}`,
+    message: `修改已保存，${auditMessage(audit, runtime.PUBLIC_DEMO)}`,
     audit: {
       verdict: audit.verdict,
       score: audit.score,

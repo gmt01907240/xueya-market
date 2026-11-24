@@ -16,8 +16,8 @@
 | --- | --- |
 | 赛道 | 校园生活 ——「造个校园新体验」 |
 | 作品形态 | 可运行的 Web 应用 + 单文件可体验 HTML（`demo.html`） |
-| 体验入口 | 主：https://xueya-production.up.railway.app ｜ 备用：`http://<公网IP>:3300` ｜ 离线：`public/demo.html` |
-| 源码仓库 | https://github.com/gmt01907240/xueya-market （私有，评审如需只读访问可开通临时协作者） |
+| 体验入口 | 主：https://xueya-production.up.railway.app ｜ 备用：自托管实例（按需提供） ｜ 离线：`public/demo.html` |
+| 源码仓库 | https://github.com/gmt01907240/xueya-market （可申请只读访问，评审通过临时协作者查看；赛后公开） |
 | 创作工具 | 全流程使用 TRAE Work / TRAE IDE 完成 |
 | 评分维度 | 应用价值 30% · 创新性 30% · 技术实现 20% · 交互体验 20% · 决赛表达 10% |
 
@@ -219,7 +219,7 @@ npm run reset   # 清空数据库与上传文件，下次启动重新生成
 npm run test:unit      # 24 项登录权限单元测试（无需启动服务）
 npm run test:data      # 院校 / 专业官方数据一致性校验（数量/唯一性/字段/数据库同步）
 npm start          # 另开终端
-npm test           # 20 项只读检查
+npm test           # 只读冒烟检查
 npm run test:payments   # 35 项支付全流程检查（独立临时数据目录）
 npm run test:audit      # 30 项内容自动审核检查（会创建并清理临时资料）
 npm run test:chat       # 统一卖家沟通全流程检查（独立临时数据目录）
