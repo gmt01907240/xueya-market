@@ -5,6 +5,11 @@ import { state, refreshUser, loadMeta, requireLogin } from '../layout.js';
 import { openChatComposer } from './messages.js';
 import { attachSelectSearch } from '../list-search.js';
 
+const maskEmail = (value) => {
+  const [name, domain] = String(value || '').split('@');
+  return domain ? `${name.slice(0, 1)}***@${domain}` : '';
+};
+
 const TABS = [
   ['orders', '我的订单', 'bag'],
   ['verify', '实名认证', 'shieldCheck'],
@@ -109,6 +114,7 @@ function ordersTab(orders) {
 }
 
 function verifyTab(user) {
+  const autoVerify = !!(state.meta && state.meta.environment && state.meta.environment.autoVerify);
   if (user.role === 'admin') {
     return `<div class="panel panel-pad verify-panel">
       <div class="verify-status-head">
@@ -132,6 +138,8 @@ function verifyTab(user) {
           <div><span>真实姓名</span><b>${esc(maskName(user.realName))}</b></div>
           <div><span>认证高校</span><b>${esc(user.school || '—')}</b></div>
           <div><span>学号</span><b>${esc(maskNo(user.studentNo))}</b></div>
+          ${user.verifyMethod ? `<div><span>认证方式</span><b>${esc(user.verifyMethod)}</b></div>` : ''}
+          ${user.schoolEmail ? `<div><span>校园邮箱</span><b>${esc(maskEmail(user.schoolEmail))}</b></div>` : ''}
           <div><span>认证时间</span><b>${user.verifiedAt ? String(user.verifiedAt).slice(0, 10) : '—'}</b></div>
         </div>
         <div class="row" style="gap:10px;margin-top:18px">
@@ -199,6 +207,19 @@ function verifyTab(user) {
           <input class="input" name="studentNo" maxlength="20" value="${esc(user.studentNo || '')}" placeholder="6—20 位字母或数字">
           <div class="hint">学号仅用于身份核验，不会公开展示</div>
         </div>
+        ${autoVerify ? `
+        <div class="field">
+          <label class="label">校园邮箱<span class="req">*</span></label>
+          <div class="row" style="gap:8px">
+            <input class="input" name="schoolEmail" type="email" maxlength="80" required placeholder="学号邮箱，如 2022xxxx@smail.nju.edu.cn">
+            <button class="btn btn-ghost" type="button" data-send-email-code style="white-space:nowrap">获取验证码</button>
+          </div>
+          <div class="hint">需以 .edu.cn 结尾；演示环境验证码会直接显示，用于验证邮箱归属</div>
+        </div>
+        <div class="field">
+          <label class="label">邮箱验证码<span class="req">*</span></label>
+          <input class="input" name="emailCode" inputmode="numeric" maxlength="6" required placeholder="6 位数字验证码">
+        </div>` : ''}
         <div class="field">
           <label class="label">认证须知</label>
           <div class="stack" style="gap:8px">
@@ -216,8 +237,8 @@ function verifyTab(user) {
       <div class="panel panel-pad">
         <h4 style="font-size:16px;margin-bottom:12px">认证流程</h4>
         <div class="steps">
-          <div class="step"><b>1</b><div><strong>选择高校并填写学号</strong><span>需与本人学籍信息保持一致</span></div></div>
-          <div class="step"><b>2</b><div><strong>管理员人工审核</strong><span>通常在 1 个工作日内完成</span></div></div>
+          <div class="step"><b>1</b><div><strong>填写学籍信息</strong><span>姓名、高校与学号需与本人一致</span></div></div>
+          <div class="step"><b>2</b><div><strong>${autoVerify ? '验证校园邮箱' : '管理员人工审核'}</strong><span>${autoVerify ? '邮箱验证码通过后即时完成审核' : '通常在 1 个工作日内完成'}</span></div></div>
           <div class="step"><b>3</b><div><strong>解锁买卖权限</strong><span>认证后默认进入本校专区</span></div></div>
         </div>
       </div>
@@ -238,17 +259,52 @@ function bindVerify(root, ctx) {
   const form = root.querySelector('[data-verify-form]');
   if (!form) return;
   attachSelectSearch(form.elements.school, { placeholder: '搜索院校，如「清华」「师范」' });
+  const autoVerify = !!(state.meta && state.meta.environment && state.meta.environment.autoVerify);
+  const sendBtn = form.querySelector('[data-send-email-code]');
+  if (sendBtn) {
+    sendBtn.addEventListener('click', async () => {
+      const email = String(new FormData(form).get('schoolEmail') || '').trim();
+      if (!email) return toast('请先填写校园邮箱', 'error');
+      sendBtn.setAttribute('aria-busy', 'true');
+      try {
+        const res = await api.post('/api/verify/email/send', { email });
+        toast(res.message);
+        let left = 60;
+        sendBtn.disabled = true;
+        sendBtn.textContent = `${left}s 后重发`;
+        const timer = setInterval(() => {
+          left -= 1;
+          if (left <= 0) {
+            clearInterval(timer);
+            sendBtn.disabled = false;
+            sendBtn.textContent = '重新发送';
+          } else {
+            sendBtn.textContent = `${left}s 后重发`;
+          }
+        }, 1000);
+      } catch (err) {
+        toast(err.message, 'error');
+      } finally {
+        sendBtn.removeAttribute('aria-busy');
+      }
+    });
+  }
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
     const data = new FormData(form);
+    const payload = {
+      realName: String(data.get('realName')).trim(),
+      school: data.get('school'),
+      studentNo: String(data.get('studentNo')).trim()
+    };
+    if (autoVerify) {
+      payload.schoolEmail = String(data.get('schoolEmail') || '').trim();
+      payload.emailCode = String(data.get('emailCode') || '').trim();
+    }
     const submit = form.querySelector('button[type="submit"]');
     submit.setAttribute('aria-busy', 'true');
     try {
-      const res = await api.post('/api/verify/submit', {
-        realName: String(data.get('realName')).trim(),
-        school: data.get('school'),
-        studentNo: String(data.get('studentNo')).trim()
-      });
+      const res = await api.post('/api/verify/submit', payload);
       state.user = res.user;
       toast(res.message);
       await refreshUser();

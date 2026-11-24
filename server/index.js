@@ -236,6 +236,7 @@ add('GET', '/api/pricing/recommend', pricingApi.recommend);
 
 /* ---- 实名与高校认证 ---- */
 add('GET', '/api/verify/status', verifyApi.status, { auth: true });
+add('POST', '/api/verify/email/send', verifyApi.sendEmailCode, { auth: true });
 add('POST', '/api/verify/submit', verifyApi.submit, { auth: true });
 
 /* ---- 院校 / 学科 / 教师资源库 ---- */
