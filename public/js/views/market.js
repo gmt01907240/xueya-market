@@ -38,7 +38,7 @@ export async function renderMarket(root, ctx) {
   const activeCat = query.category || '';
   const activeSubject = query.subject || '';
   const activeTeacher = query.teacher || '';
-  const priceOptions = [['', '全部价格'], ['free', '免费'], ['low', '15 元以内'], ['mid', '15—30 元'], ['high', '30 元以上']];
+  const priceOptions = [['', '全部价格'], ['free', '0 元体验（免支付）'], ['low', '15 元以内'], ['mid', '15—30 元'], ['high', '30 元以上']];
   const subjectOptions = (data.subjectFacets && data.subjectFacets.length ? data.subjectFacets.map((s) => s.subject) : meta.subjects);
   const teacherOptions = (data.teacherFacets || []).map((t) => t.teacher);
   const inSchoolZone = verified && !query.school && zone === 'auto';
@@ -72,6 +72,7 @@ export async function renderMarket(root, ctx) {
         <div class="filter-chips">
           <a class="chip ${activeCat ? '' : 'active'}" href="${buildHash({ ...query, category: '', page: 1 })}">全部</a>
           ${meta.categories.map((c) => `<a class="chip ${activeCat === c ? 'active' : ''}" href="${buildHash({ ...query, category: activeCat === c ? '' : c, page: 1 })}">${esc(c)}</a>`).join('')}
+          <a class="chip ${query.price === 'free' ? 'active' : ''}" href="${buildHash({ ...query, price: query.price === 'free' ? '' : 'free', page: 1 })}">0 元体验</a>
         </div>
       </div>
       <div class="filter-grid">

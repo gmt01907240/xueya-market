@@ -45,6 +45,10 @@ export async function renderHome(root) {
               <span>热门搜索</span>
               ${['考研数学', '期末真题', '雅思口语', '408', '数学建模'].map((t) => `<button type="button" data-hot="${esc(t)}">${esc(t)}</button>`).join('')}
             </div>
+            <div style="display:flex;flex-wrap:wrap;gap:8px;margin:10px 0 4px">
+              <a class="chip" href="#/market?price=free">0 元体验资料（免支付）</a>
+              <a class="chip" href="#/plan">生成学习计划</a>
+            </div>
             <div class="hero-stats">
               <div class="hero-stat"><b>${stats.materials || 0}</b><span>在架资料</span></div>
               <div class="hero-stat"><b>${Math.round((stats.downloads || 0) / 1000)}k+</b><span>累计下载</span></div>
