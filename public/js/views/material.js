@@ -173,6 +173,7 @@ export async function renderMaterial(root, ctx) {
               ${icon('heart')} ${data.favorited ? '已收藏' : '收藏资料'}
             </button>
             <button class="btn btn-soft btn-block" type="button" data-contact-seller>${icon('message')} 联系卖家</button>
+            <a class="btn btn-ghost btn-block" href="#/plan?goal=final${m.subject ? `&subject=${encodeURIComponent(m.subject)}` : ''}&from=${m.id}">${icon('sparkles')} 用它生成学习计划</a>
           </div>
           <div class="seller-box">
             ${avatar(m.seller.nickname)}

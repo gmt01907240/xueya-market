@@ -15,7 +15,7 @@
 | 项目 | 说明 |
 | --- | --- |
 | 赛道 | 校园生活 ——「造个校园新体验」 |
-| 作品形态 | 可运行的 Web 应用 + 单文件可体验 HTML（`demo.html`） |
+| 作品形态 | 可运行的 Web 应用 + 单文件可体验 HTML（`public/demo.html`） |
 | 体验入口 | 主：https://xueya-production.up.railway.app ｜ 备用：自托管实例（按需提供） ｜ 离线：`public/demo.html` |
 | 源码仓库 | https://github.com/gmt01907240/xueya-market （评审期间提供只读访问；如链接无法打开，可在作品帖留言开通；赛后保持公开） |
 | 创作工具 | 全流程使用 TRAE Work / TRAE IDE 完成 |
@@ -333,7 +333,7 @@ docker run -d -p 3300:3300 -v xueya-data:/app/data --name xueya xueya-market
 | [docs/competition-readiness.md](docs/competition-readiness.md) | 竞赛七维度评估、权重映射、本轮迭代、差距与优化路线 |
 | [docs/launch-plan.md](docs/launch-plan.md) | 从测试到真实用户：环境配置、内测准入、功能开关、灰度、公测清单、验收与回滚 |
 | [docs/release-notes.md](docs/release-notes.md) | v1.1.0 版本说明、变更、升级步骤、测试结果与已知限制 |
-| [docs/release-checklist.md](docs/release-checklist.md) | 发布测试校验清单（322 项测试、交易、上传、支付、监控、回滚） |
+| [docs/release-checklist.md](docs/release-checklist.md) | 发布测试校验清单（18 组测试脚本、交易、上传、支付、监控、回滚） |
 | [docs/compliance-self-check.md](docs/compliance-self-check.md) | 法律法规对照、技术控制自检、残余风险与整改要求 |
 | [docs/optimization-plan.md](docs/optimization-plan.md) | 本轮修改方案、代码结构、功能优化清单 |
 | [docs/competition-alignment.md](docs/competition-alignment.md) | 评审维度映射、提交材料清单、验收标准 |

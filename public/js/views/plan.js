@@ -9,6 +9,8 @@ let optionsCache = null;
 function shell(options, query) {
   const goals = options.goals || [];
   const selected = goals.some((g) => g.code === query.goal) ? query.goal : 'final';
+  const subject = String(query.subject || '');
+  const fromMaterial = String(query.from || '');
   return `
     <div class="view-enter">
       <section class="panel panel-pad plan-hero">
@@ -31,6 +33,7 @@ function shell(options, query) {
             <h3 style="font-size:18px;margin:0">生成我的学习计划</h3>
             <span class="badge gray">${options.engine === 'rule-based-v1' ? '本地规则引擎' : '智能引擎'}</span>
           </div>
+          ${fromMaterial ? '<p class="small muted" style="margin:0 0 10px">已从资料详情带入学科方向，确认目标与天数后即可生成。</p>' : ''}
           <div class="field">
             <label>学习目标</label>
             <div class="filter-chips" data-goals>
@@ -41,7 +44,7 @@ function shell(options, query) {
             <label for="planSubject">学科方向</label>
             <select class="input" id="planSubject" name="subject">
               <option value="">全部学科（由我的购买记录推断）</option>
-              ${(options.subjects || []).map((s) => `<option value="${esc(s)}">${esc(s)}</option>`).join('')}
+              ${(options.subjects || []).map((s) => `<option value="${esc(s)}" ${s === subject ? 'selected' : ''}>${esc(s)}</option>`).join('')}
             </select>
           </div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
