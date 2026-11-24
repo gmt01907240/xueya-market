@@ -15,6 +15,34 @@ const ALLOWED_EXT = ['pdf', 'doc', 'docx', 'ppt', 'pptx', 'zip', 'rar', 'txt', '
 const SCHOOL_SET = new Set(SCHOOLS);
 const SUBJECT_SET = new Set(SUBJECTS);
 const AUDIT_TEXT_LIMIT = 200000;
+// 单用户 24 小时上传配额与磁盘剩余空间下限，避免批量灌库写满磁盘
+const UPLOAD_DAILY_QUOTA = Math.max(1, Number(process.env.UPLOAD_DAILY_QUOTA) || 20);
+const UPLOAD_MIN_FREE_MB = Math.max(0, Number(process.env.UPLOAD_MIN_FREE_MB) || 500);
+
+function quotaProblem(userId) {
+  const cutoff = new Date(Date.now() - 24 * 3600 * 1000);
+  const pad = (n) => String(n).padStart(2, '0');
+  const stamp = `${cutoff.getFullYear()}-${pad(cutoff.getMonth() + 1)}-${pad(cutoff.getDate())} `
+    + `${pad(cutoff.getHours())}:${pad(cutoff.getMinutes())}:${pad(cutoff.getSeconds())}`;
+  const used = get('SELECT COUNT(*) AS c FROM materials WHERE seller_id = ? AND created_at >= ?', userId, stamp).c;
+  return used >= UPLOAD_DAILY_QUOTA
+    ? { status: 429, message: `24 小时内上传已达 ${UPLOAD_DAILY_QUOTA} 份上限，请明天再试` }
+    : null;
+}
+
+function diskProblem() {
+  try {
+    const stat = fs.statfsSync(UPLOAD_DIR);
+    const freeMb = (Number(stat.bsize) * Number(stat.bavail)) / (1024 * 1024);
+    if (freeMb < UPLOAD_MIN_FREE_MB) {
+      console.error(`[materials] 磁盘剩余空间不足：${freeMb.toFixed(0)}MB`);
+      return { status: 507, message: '资料存储空间不足，请稍后再试' };
+    }
+  } catch {
+    // 平台不支持 statfs 时跳过容量检查，不影响正常上传
+  }
+  return null;
+}
 
 const ZIP_SIG = [[0x50, 0x4b, 0x03, 0x04], [0x50, 0x4b, 0x05, 0x06], [0x50, 0x4b, 0x07, 0x08]];
 const SIGNATURES = {
@@ -39,20 +67,31 @@ function startsWith(buf, sig, offset = 0) {
 
 function signatureProblem(buf, ext) {
   if (ext === 'txt' || ext === 'md') {
-    if (buf.subarray(0, 4096).includes(0)) return '文本文件包含二进制内容，请上传真实文本';
+    const sample = buf.subarray(0, 64 * 1024);
+    if (sample.includes(0)) return '文本文件包含二进制内容，请上传真实文本';
+    let control = 0;
+    for (const byte of sample) {
+      if (byte < 9 || (byte > 13 && byte < 32)) control += 1;
+    }
+    if (sample.length && control / sample.length > 0.01) return '文本文件包含二进制内容，请上传真实文本';
     try {
       // stream 模式允许末尾被截断的多字节字符，避免误判合法 UTF-8 文本。
-      new TextDecoder('utf-8', { fatal: true }).decode(buf.subarray(0, 8192), { stream: true });
+      new TextDecoder('utf-8', { fatal: true }).decode(sample, { stream: true });
     } catch {
       return '文本文件需使用 UTF-8 编码';
     }
     return '';
   }
+  if (ext === 'docx' || ext === 'pptx' || ext === 'xlsx') {
+    const isZip = ZIP_SIG.some((sig) => startsWith(buf, sig));
+    if (!isZip) return '文件内容与扩展名不匹配，请上传真实文件';
+    // OOXML 必须是包含 [Content_Types].xml 的 ZIP，单纯改扩展名的压缩包不再放行
+    if (!buf.includes(Buffer.from('[Content_Types].xml'))) return '文件内容与扩展名不匹配，请上传真实 Office 文档';
+    return '';
+  }
   const signatures = SIGNATURES[ext];
   if (!signatures) return '';
-  const matched = signatures.some((sig) => (ext === 'pdf'
-    ? buf.subarray(0, 1024).indexOf(Buffer.from(sig)) >= 0
-    : startsWith(buf, sig)));
+  const matched = signatures.some((sig) => startsWith(buf, sig));
   return matched ? '' : '文件内容与扩展名不匹配，请上传真实文件';
 }
 
@@ -127,10 +166,10 @@ function auditStatusOf(result) {
 function auditMessage(result, demo = false) {
   if (demo) {
     if (result.verdict === 'review') {
-      return '资料已提交并自动上架；自动检测发现疑似风险内容，已转人工复核';
+      return '资料已提交；自动检测发现疑似风险内容，演示环境暂不上架，请修改后重新提交';
     }
     if (result.verdict === 'error') {
-      return '资料已提交并自动上架；自动检测服务暂不可用，已转人工复核';
+      return '资料已提交；自动检测服务暂不可用，演示环境暂不上架，请稍后重试';
     }
     return '资料已提交，演示环境免人工审核，已直接上架';
   }
@@ -220,25 +259,26 @@ function list(ctx) {
     ...where.params, pageSize, (page - 1) * pageSize
   );
 
-  // 分面计数应用除自身维度以外的当前筛选条件，避免切换维度后计数失真
+  // 分面计数应用除自身维度以外的当前筛选条件；三条聚合合并为一次查询，减少数据库往返
   const schoolWhere = whereFor('school');
-  const facets = all(
-    `SELECT m.school AS school, COUNT(*) AS count FROM materials m ${schoolWhere.sql} AND m.school != ''
-     GROUP BY m.school ORDER BY count DESC LIMIT 10`,
-    ...schoolWhere.params
-  );
   const subjectWhere = whereFor('subject');
-  const subjectFacets = all(
-    `SELECT m.subject AS subject, COUNT(*) AS count FROM materials m ${subjectWhere.sql} AND m.subject != ''
-     GROUP BY m.subject ORDER BY count DESC LIMIT 30`,
-    ...subjectWhere.params
-  );
   const teacherWhere = whereFor('teacher');
-  const teacherFacets = all(
-    `SELECT m.teacher AS teacher, COUNT(*) AS count FROM materials m ${teacherWhere.sql} AND m.teacher != ''
-     GROUP BY m.teacher ORDER BY count DESC LIMIT 30`,
-    ...teacherWhere.params
+  const facetRows = all(
+    `SELECT * FROM (
+       SELECT 'school' AS kind, m.school AS value, COUNT(*) AS count FROM materials m ${schoolWhere.sql} AND m.school != ''
+       GROUP BY m.school ORDER BY count DESC LIMIT 10
+     ) UNION ALL SELECT * FROM (
+       SELECT 'subject' AS kind, m.subject AS value, COUNT(*) AS count FROM materials m ${subjectWhere.sql} AND m.subject != ''
+       GROUP BY m.subject ORDER BY count DESC LIMIT 30
+     ) UNION ALL SELECT * FROM (
+       SELECT 'teacher' AS kind, m.teacher AS value, COUNT(*) AS count FROM materials m ${teacherWhere.sql} AND m.teacher != ''
+       GROUP BY m.teacher ORDER BY count DESC LIMIT 30
+     )`,
+    ...schoolWhere.params, ...subjectWhere.params, ...teacherWhere.params
   );
+  const facets = facetRows.filter((r) => r.kind === 'school').map((r) => ({ school: r.value, count: r.count }));
+  const subjectFacets = facetRows.filter((r) => r.kind === 'subject').map((r) => ({ subject: r.value, count: r.count }));
+  const teacherFacets = facetRows.filter((r) => r.kind === 'teacher').map((r) => ({ teacher: r.value, count: r.count }));
   sendJson(ctx.res, 200, {
     items: rows.map((m) => serialize(m, ctx.user)),
     total,
@@ -259,6 +299,11 @@ function actualPreviewRatio(m, previewLength) {
     return Math.min(20, Math.max(1, Math.round((previewLength / base) * 100)));
   }
   return fallback;
+}
+
+/** 大文件只提取前 120KB 用于试读与审核，比例按该样本估算，需向用户说明 */
+function previewRatioNote(row) {
+  return Number(row.content_chars) >= 120 * 1024 ? '大文件仅按前 120KB 内容估算试读比例' : '';
 }
 
 function detail(ctx) {
@@ -314,6 +359,7 @@ function detail(ctx) {
       available: !!(row.preview_text || row.description),
       ratio: actualPreviewRatio(row, previewContent.length),
       chars: previewContent.length,
+      ratioNote: previewRatioNote(row),
       locked: !purchased && !isOwner && !isAdmin
     }
   });
@@ -349,10 +395,11 @@ function preview(ctx) {
     title: row.title,
     ratio: actualPreviewRatio(row, fullPreview.length),
     chars: text.length,
+    ratioNote: previewRatioNote(row),
     text,
     unlocked: purchased || isOwner || isAdmin,
     watermark: `学涯集市 · ${row.school || '平台'} · 试读片段`,
-    notice: '预览内容仅用于购买决策参考，禁止复制、截图传播或下载'
+    notice: '试读片段仅供购买决策参考，完整内容需购买后查看'
   });
 }
 
@@ -372,13 +419,33 @@ function favorites(ctx) {
   sendJson(ctx.res, 200, { items: rows.map((m) => serialize(m, ctx.user)) });
 }
 
+/** 免费资料下载时补一条 0 元订单，使评价与“已获取”状态与付费资料一致 */
+function ensureFreeOrder(row, userId) {
+  if (row.price_cents !== 0 || row.seller_id === userId) return;
+  const existing = get(
+    `SELECT id FROM orders WHERE material_id = ? AND buyer_id = ? AND status IN ('completed','refund_requested') LIMIT 1`,
+    row.id, userId
+  );
+  if (existing) return;
+  run(
+    `INSERT INTO orders (material_id, buyer_id, seller_id, amount_cents, commission_cents, status, created_at)
+     VALUES (?, ?, ?, 0, 0, 'completed', ?)`,
+    row.id, userId, row.seller_id, now()
+  );
+}
+
 function download(ctx) {
   const id = Number(ctx.params.id);
   const row = get('SELECT * FROM materials WHERE id = ?', id);
   if (!row) return fail(ctx.res, 404, '资料不存在');
   const isOwner = row.seller_id === ctx.user.id;
   const isAdmin = ctx.user.role === 'admin';
+  // 下架/封禁资料对普通买家立即失效，避免违规内容继续扩散
+  if (!isOwner && !isAdmin && row.status !== 'approved') {
+    return fail(ctx.res, 409, '该资料已下架，无法下载；如已购买可联系卖家或客服申请退款');
+  }
   if (!isOwner && !isAdmin && !isVerified(ctx.user)) return fail(ctx.res, 403, '请先完成实名认证与高校认证后再下载资料');
+  if (row.price_cents === 0 && !isOwner && !isAdmin) ensureFreeOrder(row, ctx.user.id);
   const purchased = row.price_cents === 0 || !!get(
     `SELECT id FROM orders WHERE material_id = ? AND buyer_id = ? AND status IN ('completed','refund_requested') LIMIT 1`, id, ctx.user.id
   );
@@ -429,6 +496,8 @@ function makePreview({ title, description, category, school, subject, teacher, p
 async function create(ctx) {
   if (!runtime.feature('upload')) return fail(ctx.res, 403, '资料上传暂未开放，请关注平台公告');
   if (!requireVerified(ctx, '发布资料')) return;
+  const quota = quotaProblem(ctx.user.id);
+  if (quota) return fail(ctx.res, quota.status, quota.message);
   const body = ctx.body;
   const title = String(body.title || '').trim();
   const description = String(body.description || '').trim();
@@ -445,6 +514,9 @@ async function create(ctx) {
 
   if (title.length < 4 || title.length > 80) return fail(ctx.res, 400, '资料标题需为 4—80 个字符');
   if (description.length < 20) return fail(ctx.res, 400, '资料介绍至少 20 个字，方便同学判断是否适合自己');
+  if (description.length > 2000) return fail(ctx.res, 400, '资料介绍不能超过 2000 个字');
+  if (tags.some((tag) => tag.length > 20)) return fail(ctx.res, 400, '单个标签不能超过 20 个字符');
+  if (fileName.length > 120) return fail(ctx.res, 400, '文件名不能超过 120 个字符');
   if (!CATEGORIES.includes(category)) return fail(ctx.res, 400, '请选择正确的资料分类');
   if (!school) return fail(ctx.res, 400, '请选择资料所属院校');
   if (!SCHOOL_SET.has(school)) return fail(ctx.res, 400, '请选择资源库中的院校');
@@ -478,6 +550,8 @@ async function create(ctx) {
     return rejectByAudit(ctx, audit);
   }
 
+  const disk = diskProblem();
+  if (disk) return fail(ctx.res, disk.status, disk.message);
   const stored = `${Date.now()}-${crypto.randomBytes(4).toString('hex')}.${ext}`;
   try {
     await fs.promises.writeFile(path.join(UPLOAD_DIR, stored), buf);
@@ -487,8 +561,8 @@ async function create(ctx) {
   }
 
   const preview = makePreview({ title, description, category, school, subject, teacher, previewRatio }, fullText);
-  // 公开演示环境无人可执行后台审核，上传即上架；正式环境仍走人工审核
-  const initialStatus = runtime.PUBLIC_DEMO ? 'approved' : 'pending';
+  // 公开演示环境无人可执行后台审核：仅自动检测通过的内容直接上架，疑似风险内容保持待审。
+  const initialStatus = runtime.PUBLIC_DEMO && audit.verdict === 'pass' ? 'approved' : 'pending';
   const ts = now();
   const info = run(
     `INSERT INTO materials (seller_id, title, description, category, school, subject, teacher, course,
@@ -537,6 +611,8 @@ async function update(ctx) {
 
   if (title.length < 4 || title.length > 80) return fail(ctx.res, 400, '资料标题需为 4—80 个字符');
   if (description.length < 20) return fail(ctx.res, 400, '资料介绍至少 20 个字');
+  if (description.length > 2000) return fail(ctx.res, 400, '资料介绍不能超过 2000 个字');
+  if (tags.split(',').some((tag) => tag.length > 20)) return fail(ctx.res, 400, '单个标签不能超过 20 个字符');
   if (!CATEGORIES.includes(category)) return fail(ctx.res, 400, '请选择正确的资料分类');
   if (!school) return fail(ctx.res, 400, '请选择资料所属院校');
   if (!SCHOOL_SET.has(school)) return fail(ctx.res, 400, '请选择资源库中的院校');
@@ -571,8 +647,22 @@ async function update(ctx) {
     return rejectByAudit(ctx, audit);
   }
 
-  // 公开演示环境无人可执行后台审核，编辑后维持上架；正式环境重新进入待审核
-  const nextStatus = runtime.PUBLIC_DEMO ? 'approved' : 'pending';
+  // 已下架/封禁的资料不因卖家编辑而恢复；敏感字段变更才重新进入审核，描述/标签小改保留上架。
+  const sensitiveChanged = title !== row.title
+    || priceCents !== row.price_cents
+    || category !== row.category
+    || school !== row.school
+    || subject !== row.subject;
+  let nextStatus;
+  if (row.status === 'offline' || row.status === 'blocked') {
+    nextStatus = row.status;
+  } else if (runtime.PUBLIC_DEMO) {
+    nextStatus = audit.verdict === 'pass' ? 'approved' : 'pending';
+  } else if (row.status === 'approved' && !sensitiveChanged && audit.verdict === 'pass') {
+    nextStatus = 'approved';
+  } else {
+    nextStatus = 'pending';
+  }
   run(
     `UPDATE materials SET title = ?, description = ?, category = ?, school = ?, subject = ?, teacher = ?, course = ?,
        preview_text = ?, preview_ratio = ?, price_cents = ?, price_source = ?, price_note = ?, tags = ?,
@@ -649,6 +739,8 @@ function addReview(ctx) {
   const content = String(ctx.body.content || '').trim();
   if (!Number.isInteger(rating) || rating < 1 || rating > 5) return fail(ctx.res, 400, '请选择 1—5 星评分');
   if (content.length > 300) return fail(ctx.res, 400, '评价内容不能超过 300 字');
+  const audit = contentAudit.guard(content, { targetType: 'review', targetId: id, userId: ctx.user.id });
+  if (audit.verdict === 'block') return fail(ctx.res, 422, '评价未通过平台合规检测，请修改后重试');
   const order = get(
     `SELECT o.* FROM orders o LEFT JOIN reviews r ON r.order_id = o.id
      WHERE o.material_id = ? AND o.buyer_id = ? AND o.status = 'completed' AND r.id IS NULL

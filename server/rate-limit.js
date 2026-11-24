@@ -120,11 +120,21 @@ const RULES = [
 
 const buckets = new Map();
 
+// 受信反向代理层数：仅在 TRUST_PROXY 开启时生效，从右向左取代理追加的真实来源。
+const TRUST_PROXY_HOPS = envInt('TRUST_PROXY_HOPS', 1);
+
 function clientIp(req) {
   // 仅在明确配置了受信反向代理时读取 X-Forwarded-For，避免客户端伪造 IP 绕过限流。
+  // 取最右侧（由最近一跳代理追加）的地址：客户端自行添加的左侧条目不可信。
   if (runtime.TRUST_PROXY) {
     const forwarded = req.headers['x-forwarded-for'];
-    if (forwarded) return runtime.normalizeIp(String(forwarded).split(',')[0]);
+    if (forwarded) {
+      const hops = String(forwarded).split(',').map((item) => item.trim()).filter(Boolean);
+      if (hops.length) {
+        const index = Math.max(0, hops.length - TRUST_PROXY_HOPS);
+        return runtime.normalizeIp(hops[index]);
+      }
+    }
   }
   return runtime.normalizeIp(req.socket.remoteAddress || 'unknown');
 }

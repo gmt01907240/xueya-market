@@ -140,16 +140,27 @@ function helperRows(orderId) {
 
 function orderView(row, viewer, opts = {}) {
   if (!row) return null;
-  const helperCount = get('SELECT COUNT(DISTINCT helper_id) AS c FROM bargain_assists WHERE order_id = ?', row.id).c;
-  const totalCuts = get('SELECT COUNT(*) AS c FROM bargain_assists WHERE order_id = ?', row.id).c;
-  const myCutCount = viewer
-    ? get('SELECT COUNT(*) AS c FROM bargain_assists WHERE order_id = ? AND helper_id = ?', row.id, viewer.id).c
-    : 0;
+  const stats = get(
+    `SELECT COUNT(DISTINCT helper_id) AS helpers, COUNT(*) AS cuts,
+       COALESCE(SUM(CASE WHEN helper_id = ? THEN 1 ELSE 0 END), 0) AS mine
+     FROM bargain_assists WHERE order_id = ?`,
+    viewer ? viewer.id : -1, row.id
+  );
+  const helperCount = Number(stats.helpers || 0);
+  const totalCuts = Number(stats.cuts || 0);
+  const myCutCount = viewer ? Number(stats.mine || 0) : 0;
   const expired = row.status === 'expired' || (row.status === 'active' && row.expires_at <= now());
-  const paidOrder = row.order_id ? get('SELECT id, status FROM orders WHERE id = ?', row.order_id) : null;
-  const purchased = !!get(
+  const paidOrder = row.order_id && viewer && viewer.id === row.user_id
+    ? get('SELECT id, status FROM orders WHERE id = ?', row.order_id)
+    : null;
+  const purchased = viewer ? !!get(
     `SELECT id FROM orders WHERE material_id = ? AND buyer_id = ? AND status IN ('completed','refund_requested') LIMIT 1`,
     row.material_id, row.user_id
+  ) : false;
+  // 参与者身份与底价仅对发起人、卖家、管理员和已助力用户可见，避免匿名枚举学生信息
+  const isOwner = !!viewer && viewer.id === row.user_id;
+  const canSeePeople = !!viewer && (
+    isOwner || viewer.id === row.seller_id || viewer.role === 'admin' || myCutCount > 0
   );
 
   let canAssist = false;
@@ -175,7 +186,7 @@ function orderView(row, viewer, opts = {}) {
     statusText: STATUS_TEXT[expired ? 'expired' : row.status] || row.status,
     startPrice: row.start_price_cents,
     currentPrice: row.current_price_cents,
-    floorPrice: row.floor_price_cents,
+    floorPrice: canSeePeople ? row.floor_price_cents : null,
     saved: Math.max(0, row.start_price_cents - row.current_price_cents),
     progress: progressOf(row.start_price_cents, row.current_price_cents, row.floor_price_cents),
     helperCount,
@@ -199,23 +210,23 @@ function orderView(row, viewer, opts = {}) {
       status: row.material_status,
       sellerId: row.seller_id
     },
-    owner: {
+    owner: canSeePeople ? {
       id: row.user_id,
       nickname: row.owner_nickname,
       school: row.owner_school
-    },
+    } : null,
     myCutCount,
     canAssist,
     assistHint,
     canShare: !!viewer && viewer.id === row.user_id && row.status === 'active' && !expired,
     canPurchase: !!viewer && viewer.id === row.user_id && !expired && row.status === 'success' && !purchased,
     purchased,
-    purchaseOrderId: row.order_id,
-    purchaseOrderStatus: paidOrder ? paidOrder.status : '',
+    purchaseOrderId: isOwner ? row.order_id : null,
+    purchaseOrderStatus: isOwner && paidOrder ? paidOrder.status : '',
     sharePath: `#/bargain/${row.id}`
   };
 
-  if (opts.helpers !== false) {
+  if (opts.helpers !== false && canSeePeople) {
     view.helpers = helperRows(row.id).map((s) => ({
       id: s.id,
       helperId: s.helper_id,

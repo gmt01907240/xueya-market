@@ -4,6 +4,7 @@ const { all, get, run, now } = require('./db');
 const { sendJson, fail } = require('./http');
 const runtime = require('./runtime-config');
 const communityApi = require('./api-community');
+const contentAudit = require('./content-audit');
 
 const TICKET_TYPES = ['bug', 'suggestion', 'complaint', 'consult', 'other'];
 const STATUSES = ['open', 'processing', 'resolved', 'closed'];
@@ -169,6 +170,8 @@ function create(ctx) {
   if (!title) title = { bug: '问题反馈', suggestion: '功能建议', complaint: '交易投诉', other: '其他咨询' }[type];
 
   if (title.length < 2 || title.length > 80) return fail(ctx.res, 400, '标题需为 2—80 个字符');
+  const audit = contentAudit.guard(`${title}\n${content}`, { targetType: 'ticket', targetId: null, userId: user.id });
+  if (audit.verdict === 'block') return fail(ctx.res, 422, '工单内容未通过平台合规检测，请修改后重试');
   const ts = now();
   const info = run(
     `INSERT INTO tickets (user_id, kind, ticket_type, title, content, material_id, target_user_id,
@@ -194,6 +197,8 @@ function reply(ctx) {
     const content = String(ctx.body.content || '').trim();
     if (!content) return fail(ctx.res, 400, '请输入回复内容');
     if (content.length > 1000) return fail(ctx.res, 400, '回复不能超过 1000 字');
+    const audit = contentAudit.guard(content, { targetType: 'ticket', targetId: id, userId: ctx.user.id });
+    if (audit.verdict === 'block') return fail(ctx.res, 422, '回复未通过平台合规检测，请修改后重试');
     let thread = get(
       `SELECT * FROM threads WHERE (user_a = ? AND user_b = ?) OR (user_a = ? AND user_b = ?)
        ORDER BY last_message_at DESC LIMIT 1`,
@@ -224,6 +229,8 @@ function reply(ctx) {
   const content = String(ctx.body.content || '').trim();
   if (content.length < 1) return fail(ctx.res, 400, '请输入回复内容');
   if (content.length > 2000) return fail(ctx.res, 400, '回复不能超过 2000 字');
+  const audit = contentAudit.guard(content, { targetType: 'ticket', targetId: id, userId: ctx.user.id });
+  if (audit.verdict === 'block') return fail(ctx.res, 422, '回复未通过平台合规检测，请修改后重试');
 
   const isOwner = t.user_id === ctx.user.id;
   const role = ctx.user.role === 'admin' ? 'admin' : 'user';

@@ -18,14 +18,26 @@ setInterval(() => {
   try { db.exec('PRAGMA wal_checkpoint(TRUNCATE);'); } catch { /* 写入繁忙时跳过 */ }
 }, 30 * 60 * 1000).unref();
 
+const statements = new Map();
+function prepare(sql) {
+  let stmt = statements.get(sql);
+  if (!stmt) {
+    stmt = db.prepare(sql);
+    // 防止动态 SQL 过多导致缓存无限增长；达到阈值后整体重建
+    if (statements.size >= 500) statements.clear();
+    statements.set(sql, stmt);
+  }
+  return stmt;
+}
+
 function all(sql, ...params) {
-  return db.prepare(sql).all(...params);
+  return prepare(sql).all(...params);
 }
 function get(sql, ...params) {
-  return db.prepare(sql).get(...params);
+  return prepare(sql).get(...params);
 }
 function run(sql, ...params) {
-  return db.prepare(sql).run(...params);
+  return prepare(sql).run(...params);
 }
 let txDepth = 0;
 function tx(fn) {
@@ -1415,6 +1427,7 @@ function init() {
   ensureColumn('users', 'admin_fail_count', 'admin_fail_count INTEGER NOT NULL DEFAULT 0');
   ensureColumn('users', 'admin_mfa_fail_count', 'admin_mfa_fail_count INTEGER NOT NULL DEFAULT 0');
   ensureColumn('users', 'admin_lock_until', 'admin_lock_until INTEGER NOT NULL DEFAULT 0');
+  ensureColumn('users', 'admin_lock_ip', "admin_lock_ip TEXT NOT NULL DEFAULT ''");
   ensureColumn('users', 'token_version', 'token_version INTEGER NOT NULL DEFAULT 0');
   try {
     run(`CREATE UNIQUE INDEX IF NOT EXISTS idx_users_phone ON users(phone) WHERE phone <> ''`);
@@ -1435,12 +1448,16 @@ function init() {
   ensureColumn('materials', 'audit_score', 'audit_score INTEGER NOT NULL DEFAULT 0');
   ensureColumn('materials', 'audit_hits', "audit_hits TEXT NOT NULL DEFAULT ''");
   ensureColumn('materials', 'audit_status', "audit_status TEXT NOT NULL DEFAULT ''");
+  // 退款申请计数：被驳回后可再次申请，但总次数受限，避免反复触发人工审核
+  ensureColumn('orders', 'refund_attempts', 'refund_attempts INTEGER NOT NULL DEFAULT 0');
   ensureColumn('materials', 'audit_at', 'audit_at TEXT');
   ensureColumn('orders', 'payment_channel', "payment_channel TEXT NOT NULL DEFAULT ''");
   ensureColumn('orders', 'bargain_id', 'bargain_id INTEGER');
   ensureColumn('payments', 'channel_order_id', "channel_order_id TEXT NOT NULL DEFAULT ''");
   ensureColumn('payments', 'channel_payload', "channel_payload TEXT NOT NULL DEFAULT ''");
   ensureColumn('threads', 'scene', "scene TEXT NOT NULL DEFAULT ''");
+  ensureColumn('settlements', 'payout_txn_no', "payout_txn_no TEXT NOT NULL DEFAULT ''");
+  ensureColumn('settlements', 'reversed_at', 'reversed_at TEXT');
   // 院校库对齐教育部官方名单：补充官方标识码、办学层次、办学类型等字段
   ensureColumn('schools', 'code', "code TEXT NOT NULL DEFAULT ''");
   ensureColumn('schools', 'supervisor', "supervisor TEXT NOT NULL DEFAULT ''");
@@ -1453,6 +1470,17 @@ function init() {
     run(`CREATE UNIQUE INDEX IF NOT EXISTS idx_schools_code ON schools(code) WHERE code <> ''`);
   } catch { /* 旧库存在重复官方编码时不阻断启动，由同步逻辑覆盖 */ }
   run('CREATE INDEX IF NOT EXISTS idx_schools_type ON schools(school_type)');
+  // 列表主查询与分面统计的常用前缀，减少全表扫描
+  run('CREATE INDEX IF NOT EXISTS idx_materials_status_sort ON materials(status, downloads DESC)');
+  run('CREATE INDEX IF NOT EXISTS idx_materials_status_category ON materials(status, category)');
+  run('CREATE INDEX IF NOT EXISTS idx_materials_status_school ON materials(status, school)');
+  run('CREATE INDEX IF NOT EXISTS idx_materials_status_subject ON materials(status, subject)');
+  run('CREATE INDEX IF NOT EXISTS idx_orders_material_buyer ON orders(material_id, buyer_id, status)');
+  // 审计日志保留期：启动时清理超期记录，避免长期累积操作详情
+  const auditKeepDays = Math.max(7, Number(process.env.AUDIT_LOG_KEEP_DAYS) || 180);
+  const auditCutoff = stamp(new Date(Date.now() - auditKeepDays * 24 * 3600 * 1000));
+  run('DELETE FROM admin_audit_logs WHERE created_at < ?', auditCutoff);
+  run('DELETE FROM audit_logs WHERE created_at < ?', auditCutoff);
   // 角色统一收敛为两类：个人用户（user）与管理员（admin）
   run("UPDATE users SET role = 'user' WHERE role NOT IN ('user', 'admin')");
   run("UPDATE ticket_replies SET role = 'user' WHERE role NOT IN ('user', 'admin')");

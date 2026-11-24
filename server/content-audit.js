@@ -249,6 +249,13 @@ function record({ targetType = 'material', targetId = null, userId = null, actio
   }
 }
 
+/** 业务侧统一入口：检测并记录，返回检测结果；调用方只需处理 block 分支 */
+function guard(text, meta = {}) {
+  const result = safeInspect(text);
+  record({ ...meta, text, result, action: meta.action || 'submit' });
+  return result;
+}
+
 function markReviewed(targetId, action, note = '') {
   try {
     const row = get(
@@ -498,6 +505,7 @@ module.exports = {
   loadSettings,
   inspect,
   safeInspect,
+  guard,
   record,
   markReviewed,
   listLogs,

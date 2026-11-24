@@ -308,7 +308,7 @@ sudo ufw enable
 | 变量 | 默认值 | 说明 |
 | --- | --- | --- |
 | `PORT` | `3300` | HTTP 监听端口 |
-| `NODE_ENV` | 未设置 | `staging` 允许模拟支付；`production` 强制真实支付通道就绪，否则拒绝启动 |
+| `NODE_ENV` | `production`（`deploy/base.env`） | `production` 强制真实支付通道就绪，否则拒绝启动；仅本地开发/演示显式改回 `development`/`staging` |
 | `DEPLOY_PROFILE` | 空 | 设为 `public-demo` 开启公开演示模式 |
 | `PUBLIC_DEMO` | `false` | 公开演示开关，等价于 `DEPLOY_PROFILE=public-demo` |
 | `AUTO_VERIFY` | 跟随 `PUBLIC_DEMO` | 实名认证自动通过；仅演示环境开启，生产必须为 `false` |
@@ -319,6 +319,11 @@ sudo ufw enable
 | `RATE_LIMIT_LOGIN` 等 | 见 `server/rate-limit.js` | 各接口每分钟限流阈值 |
 | `SEED_DEMO` | 非生产 `true`，生产 `false` | 是否写入演示账号与演示订单；生产必须为 `false` |
 | `TRUST_PROXY` | `false` | 部署在 Nginx/托管平台代理后设为 `1`，只信任代理传来的 `X-Forwarded-For` |
+| `TRUST_PROXY_HOPS` | `1` | 可信代理层数；取 `X-Forwarded-For` 自右向左第 N 跳，避免客户端伪造最左值绕过限流 |
+| `METRICS_TOKEN` | 空 | 设置后 `/api/metrics` 仅接受 `Authorization: Bearer <token>`；不再支持 URL 查询参数传令牌 |
+| `UPLOAD_DAILY_QUOTA` | `20` | 单用户 24 小时资料上传配额，超限返回 429 |
+| `UPLOAD_MIN_FREE_MB` | `500` | 上传目录剩余空间下限，低于该值拒绝上传并返回 507、同时输出错误日志 |
+| `AUDIT_LOG_KEEP_DAYS` | `180` | 审计日志保留天数，启动时自动清理超期记录（最小 7 天） |
 | `INVITE_CODES` | 空 | 内测邀请码，格式 `BETA-001:50,BETA-002:100`，留空表示注册不需要邀请码 |
 | `FEATURE_REGISTRATION` 等 | 开启 | 设为 `off`/`false`/`0` 关闭对应功能；支持注册、上传、支付、规划、砍价、AI 客服、工单 |
 | `ADMIN_IP_ALLOWLIST` | 空 | 后台允许来源，支持 IP 与 CIDR，逗号分隔；留空时仅允许本机与私网，公网演示建议设为保留网段以彻底关闭后台 |
@@ -346,10 +351,10 @@ curl -s http://localhost:3300/api/health
 }
 ```
 
-运行指标（聚合计数，不含用户身份信息）：
+运行指标（聚合计数，不含用户身份信息）。配置了 `METRICS_TOKEN` 时只能通过请求头访问，避免令牌出现在访问日志与浏览器历史中：
 
 ```bash
-curl -s http://localhost:3300/api/metrics
+curl -s -H "Authorization: Bearer $METRICS_TOKEN" http://localhost:3300/api/metrics
 ```
 
 返回包含累计请求量、状态码分布、5xx 数量、内存占用、数据库体积与当前部署环境，可直接接入云监控探针。
@@ -358,9 +363,29 @@ curl -s http://localhost:3300/api/metrics
 
 - 进程存活与健康检查状态（`/api/health` 非 200 即告警）
 - 5xx 错误率（`/api/metrics` 中 `requests.serverErrors`）
-- 磁盘使用率（上传文件与 SQLite 增长）
-- 数据库文件大小与备份是否成功
+- 磁盘使用率（上传文件与 SQLite 增长）；剩余空间低于 `UPLOAD_MIN_FREE_MB`（默认 500MB）时接口返回 507 并输出 `[materials] 磁盘剩余空间不足` 日志，需立即扩容或清理
+- 上传异常（429 表示用户超出日配额；507 表示磁盘告警）
+- 数据库文件大小与备份是否成功（备份脚本退出码非 0 即告警）
 - 进程重启次数（异常退出应排查标准错误输出中的 `[uncaughtException]` / `[unhandledRejection]`）
+
+### 生产最小变量清单
+
+只加载 `deploy/base.env` 或仅配置以下变量即可安全启动生产环境：
+
+```bash
+NODE_ENV=production
+DATA_DIR=/app/data
+PORT=3300
+PAYMENT_MODE=live
+PAYMENT_LIVE_ENABLED=true
+SEED_DEMO=false
+AUTO_VERIFY=false
+ADMIN_MFA_SECRET=<32 字节以上随机串>
+ADMIN_IP_ALLOWLIST=<办公网出口 IP/CIDR>
+# 真实支付渠道参数与 METRICS_TOKEN 按需补充
+```
+
+> `SEED_DEMO=true` 在非回环地址会被拒绝启动；公网演示必须显式设置 `DEPLOY_PROFILE=public-demo`，此时后台路由统一返回 404。
 
 ## 八、数据备份与恢复
 

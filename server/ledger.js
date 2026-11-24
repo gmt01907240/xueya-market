@@ -156,6 +156,23 @@ function recordOrderRefund(order) {
   });
 }
 
+/** 收益结算：借卖家应付款，贷平台资金（划付凭证） */
+function recordSettlementPaid(settlement) {
+  if (!settlement || !settlement.order_id) throw new Error('缺少结算信息');
+  const net = Number(settlement.net_cents);
+  if (!(net > 0)) return { skipped: true, txnId: null };
+  return post({
+    txnNo: `SETTLE-${settlement.order_id}`,
+    bizType: 'settlement_paid',
+    bizId: String(settlement.order_id),
+    memo: `订单 #${settlement.order_id} 收益结算划付`,
+    lines: [
+      { account: sellerAccount(settlement.seller_id), direction: 'debit', amount: net },
+      { account: PLATFORM_ACCOUNTS.cash, direction: 'credit', amount: net }
+    ]
+  });
+}
+
 function accountBalance(code) {
   const account = get('SELECT * FROM ledger_accounts WHERE code = ?', code);
   if (!account) return { code, debit: 0, credit: 0, balance: 0, type: '' };
@@ -324,6 +341,7 @@ module.exports = {
   sellerAccount,
   post,
   recordOrderPaid,
+  recordSettlementPaid,
   recordOrderRefund,
   accountBalance,
   sellerBalance,

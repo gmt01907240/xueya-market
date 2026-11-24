@@ -10,7 +10,8 @@
  * 4. 平台不提供站内充值 / 提现，收益按结算周期划付至卖家收款账户。
  */
 
-const { all, get, run, now } = require('./db');
+const { all, get, run, tx, now } = require('./db');
+const ledger = require('./ledger');
 
 const DELAY_HOURS = (() => {
   const value = Number(process.env.SETTLEMENT_DELAY_HOURS);
@@ -20,6 +21,7 @@ const DELAY_HOURS = (() => {
 const STATUS_TEXT = {
   pending: '待结算',
   settled: '已结算',
+  reversed: '已冲正',
   cancelled: '已取消'
 };
 
@@ -58,27 +60,56 @@ function recordForOrder(order, paidAt) {
 
 function settleDue() {
   const ts = now();
-  const info = run(
-    `UPDATE settlements SET status = 'settled', settled_at = ?
-     WHERE status = 'pending' AND settle_due <= ?`,
-    ts, ts
+  // 只结算仍处于 completed 的订单；退款中或已退款订单不进入划付
+  const rows = all(
+    `SELECT s.* FROM settlements s JOIN orders o ON o.id = s.order_id
+     WHERE s.status = 'pending' AND s.settle_due <= ? AND o.status = 'completed' AND o.amount_cents > 0`,
+    ts
   );
-  return info.changes || 0;
+  let count = 0;
+  for (const row of rows) {
+    tx(() => {
+      const info = run(
+        `UPDATE settlements SET status = 'settled', settled_at = ? WHERE id = ? AND status = 'pending'`,
+        ts, row.id
+      );
+      if (!info.changes) return;
+      const posted = ledger.recordSettlementPaid(row);
+      if (posted.txnId) {
+        run('UPDATE settlements SET payout_txn_no = ? WHERE id = ?', `SETTLE-${row.order_id}`, row.id);
+      }
+      count += 1;
+    });
+  }
+  return count;
 }
 
 function cancelForOrder(orderId, note = '订单退款，结算已取消') {
-  run(
-    `UPDATE settlements SET status = 'cancelled', cancelled_at = ?, note = ?
-     WHERE order_id = ? AND status IN ('pending', 'settled')`,
-    now(), note, orderId
-  );
+  const row = get('SELECT * FROM settlements WHERE order_id = ?', orderId);
+  if (!row) return null;
+  if (row.status === 'settled') {
+    // 已划付的收益不能直接抹掉：标记冲正，退款凭证会使卖家应付款转为负数（平台应收）
+    run(
+      `UPDATE settlements SET status = 'reversed', reversed_at = ?, note = ? WHERE id = ? AND status = 'settled'`,
+      now(), note.replace('已取消', '已冲正'), row.id
+    );
+    return 'reversed';
+  }
+  if (row.status === 'pending') {
+    run(
+      `UPDATE settlements SET status = 'cancelled', cancelled_at = ?, note = ? WHERE id = ? AND status = 'pending'`,
+      now(), note, row.id
+    );
+    return 'cancelled';
+  }
+  return row.status;
 }
 
 /** 为历史订单补建结算记录，保证升级后账单完整 */
 function backfill() {
   const rows = all(
     `SELECT o.* FROM orders o LEFT JOIN settlements s ON s.order_id = o.id
-     WHERE s.id IS NULL AND o.status IN ('completed', 'refund_requested')`
+     WHERE s.id IS NULL AND o.status IN ('completed', 'refund_requested') AND o.amount_cents > 0`
   );
   for (const row of rows) recordForOrder(row, row.created_at);
   settleDue();
@@ -99,6 +130,8 @@ function serialize(row) {
     statusText: STATUS_TEXT[row.status] || row.status,
     settleDue: row.settle_due,
     settledAt: row.settled_at,
+    payoutTxnNo: row.payout_txn_no || '',
+    reversedAt: row.reversed_at || '',
     cancelledAt: row.cancelled_at,
     note: row.note || '',
     createdAt: row.created_at
@@ -118,11 +151,12 @@ function sellerList(sellerId) {
   const rows = all(`${SELLER_SELECT} WHERE s.seller_id = ? ORDER BY s.created_at DESC LIMIT 50`, sellerId);
   const totals = get(
     `SELECT COUNT(*) AS count,
-       COALESCE(SUM(CASE WHEN status != 'cancelled' THEN net_cents ELSE 0 END), 0) AS net,
-       COALESCE(SUM(CASE WHEN status != 'cancelled' THEN order_amount_cents ELSE 0 END), 0) AS gross,
-       COALESCE(SUM(CASE WHEN status != 'cancelled' THEN commission_cents ELSE 0 END), 0) AS commission,
+       COALESCE(SUM(CASE WHEN status NOT IN ('cancelled', 'reversed') THEN net_cents ELSE 0 END), 0) AS net,
+       COALESCE(SUM(CASE WHEN status NOT IN ('cancelled', 'reversed') THEN order_amount_cents ELSE 0 END), 0) AS gross,
+       COALESCE(SUM(CASE WHEN status NOT IN ('cancelled', 'reversed') THEN commission_cents ELSE 0 END), 0) AS commission,
        COALESCE(SUM(CASE WHEN status = 'pending' THEN net_cents ELSE 0 END), 0) AS pending,
-       COALESCE(SUM(CASE WHEN status = 'settled' THEN net_cents ELSE 0 END), 0) AS settled
+       COALESCE(SUM(CASE WHEN status = 'settled' THEN net_cents ELSE 0 END), 0) AS settled,
+       COALESCE(SUM(CASE WHEN status = 'reversed' THEN net_cents ELSE 0 END), 0) AS reversed
      FROM settlements WHERE seller_id = ?`, sellerId
   );
   const pendingCount = get(
@@ -155,7 +189,7 @@ function adminList(status = '') {
     `SELECT status, COUNT(*) AS count, COALESCE(SUM(net_cents), 0) AS amount
      FROM settlements GROUP BY status`
   );
-  const totals = { pending: { count: 0, amount: 0 }, settled: { count: 0, amount: 0 }, cancelled: { count: 0, amount: 0 } };
+  const totals = { pending: { count: 0, amount: 0 }, settled: { count: 0, amount: 0 }, reversed: { count: 0, amount: 0 }, cancelled: { count: 0, amount: 0 } };
   for (const row of totalRows) totals[row.status] = { count: row.count, amount: row.amount };
   return { cycle: DELAY_HOURS >= 24 ? 'T+1' : `T+${DELAY_HOURS}h`, delayHours: DELAY_HOURS, totals, items: rows.map(serialize) };
 }

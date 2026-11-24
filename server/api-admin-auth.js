@@ -35,9 +35,13 @@ function publicAdmin(user) {
   };
 }
 
-function lockRemaining(user) {
+function lockRemaining(user, ip = '') {
   const until = Number((user && user.admin_lock_until) || 0);
-  return until > Date.now() ? until - Date.now() : 0;
+  if (until <= Date.now()) return 0;
+  // 锁定只作用于触发锁定的网络段，避免他人从任意 IP 反复锁定管理员账号
+  const lockedPrefix = String((user && user.admin_lock_ip) || '');
+  if (lockedPrefix && security.ipPrefix(ip) !== lockedPrefix) return 0;
+  return until - Date.now();
 }
 
 function lockedResponse(res, remainingMs) {
@@ -51,7 +55,7 @@ function lockedResponse(res, remainingMs) {
 
 function lockAccount(user, ip, ua, reason) {
   const until = Date.now() + security.LOCK_MS;
-  run('UPDATE users SET admin_lock_until = ? WHERE id = ?', until, user.id);
+  run('UPDATE users SET admin_lock_until = ?, admin_lock_ip = ? WHERE id = ?', until, security.ipPrefix(ip), user.id);
   security.recordEvent(user.id, 'account_locked', { ip, ua, detail: { reason } });
   security.raiseAlert(user.id, 'account_locked', `管理员账号因${reason}被临时锁定 15 分钟`, {
     level: 'critical', ip, ua, detail: { reason }
@@ -123,7 +127,7 @@ function login(ctx) {
 
   if (user.status !== 'active') return fail(ctx.res, 403, '该管理员账号已被停用');
 
-  run('UPDATE users SET admin_fail_count = 0, admin_lock_until = 0 WHERE id = ?', user.id);
+  run('UPDATE users SET admin_fail_count = 0, admin_lock_until = 0, admin_lock_ip = ? WHERE id = ?', '', user.id);
 
   // 风险识别：新设备 / 新网络段（MFA 仍必须完成）
   const prefix = security.ipPrefix(ip);
@@ -183,7 +187,7 @@ function mfa(ctx) {
   if (!user || user.role !== 'admin' || Number(payload.v || 0) !== Number(user.token_version || 0)) {
     return fail(ctx.res, 401, '验证会话已失效，请重新登录');
   }
-  const remaining = lockRemaining(user);
+  const remaining = lockRemaining(user, ip);
   if (remaining > 0) return lockedResponse(ctx.res, remaining);
 
   const secret = String(user.admin_mfa_secret || '').trim();
@@ -208,7 +212,7 @@ function mfa(ctx) {
   }
 
   run(
-    `UPDATE users SET admin_mfa_fail_count = 0, admin_fail_count = 0, admin_lock_until = 0,
+    `UPDATE users SET admin_mfa_fail_count = 0, admin_fail_count = 0, admin_lock_until = 0, admin_lock_ip = '',
        admin_mfa_last_step = ?, admin_mfa_enabled_at = COALESCE(admin_mfa_enabled_at, ?) WHERE id = ?`,
     checked.step, now(), user.id
   );
@@ -278,7 +282,8 @@ function changePassword(ctx) {
   const { hash, salt } = hashPassword(newPassword);
   run(
     `UPDATE users SET password_hash = ?, salt = ?, admin_password_changed_at = ?,
-       token_version = token_version + 1, admin_fail_count = 0, admin_mfa_fail_count = 0, admin_lock_until = 0
+       token_version = token_version + 1, admin_fail_count = 0, admin_mfa_fail_count = 0,
+       admin_lock_until = 0, admin_lock_ip = ''
      WHERE id = ?`,
     hash, salt, now(), user.id
   );
@@ -310,7 +315,7 @@ function status(ctx) {
     passwordChangedAt: user.admin_password_changed_at || null,
     passwordExpiresInDays: security.passwordDaysLeft(user.admin_password_changed_at),
     passwordExpired: security.passwordExpired(user.admin_password_changed_at),
-    locked: lockRemaining(user) > 0,
+    locked: lockRemaining(user, requestIp(ctx.req)) > 0,
     lockUntil: Number(user.admin_lock_until || 0) || null,
     knownDevices: deviceCount,
     lastLoginAt: user.last_login_at || null,

@@ -280,7 +280,10 @@ function refunds(ctx) {
 
 async function resolveRefund(ctx) {
   const replay = idempotency.replay(ctx, 'admin.refund');
-  if (replay) return sendJson(ctx.res, replay.statusCode, replay.data);
+  if (replay) {
+    if (replay.conflict) return fail(ctx.res, 409, '该幂等键已用于其他请求，请更换 Idempotency-Key 后重试');
+    return sendJson(ctx.res, replay.statusCode, replay.data);
+  }
   const id = Number(ctx.params.id);
   const order = get('SELECT * FROM orders WHERE id = ?', id);
   if (!order) return fail(ctx.res, 404, '订单不存在');
@@ -315,7 +318,17 @@ async function resolveRefund(ctx) {
     tx(() => {
       run(`UPDATE orders SET status = 'refunded' WHERE id = ?`, id);
       const sellerIncome = order.amount_cents - order.commission_cents;
-      run('UPDATE users SET balance_cents = MAX(0, balance_cents - ?) WHERE id = ?', sellerIncome, order.seller_id);
+      // 退款后对应评价不再计入评分，避免“退款仍保留好评”
+      const review = get('SELECT id FROM reviews WHERE order_id = ?', order.id);
+      if (review) {
+        run('DELETE FROM reviews WHERE order_id = ?', order.id);
+        const agg = get('SELECT COUNT(*) AS c, AVG(rating) AS avg FROM reviews WHERE material_id = ?', order.material_id);
+        run(
+          'UPDATE materials SET rating_avg = ?, rating_count = ? WHERE id = ?',
+          agg.c ? Math.round(agg.avg * 10) / 10 : 0, agg.c, order.material_id
+        );
+      }
+      run('UPDATE users SET balance_cents = balance_cents - ? WHERE id = ?', sellerIncome, order.seller_id);
       run(
         `UPDATE payments SET status = 'refunded', failure_code = 'REFUNDED', failure_message = '订单已退款'
          WHERE order_id = ? AND status = 'paid'`, id

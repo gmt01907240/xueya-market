@@ -248,7 +248,7 @@ async function main() {
 
     const afterRefund = await request('/api/seller/settlements', { token: sellerToken });
     const cancelled = (afterRefund.data?.items || [])[0];
-    check('退款后结算记录被取消', cancelled?.status === 'cancelled', JSON.stringify(cancelled));
+    check('退款后已结算记录被冲正', cancelled?.status === 'reversed', JSON.stringify(cancelled));
     const overviewAfter = await request('/api/seller/overview', { token: sellerToken });
     check('退款后卖家收益扣回', overviewAfter.data?.stats?.balance === 0, JSON.stringify(overviewAfter.data?.stats));
 

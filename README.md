@@ -6,7 +6,7 @@
 
 本项目参加 **TRAE AI 全国大学生创造力大赛 · 校园生活赛道**。
 
-**交付形态：网页端应用（Web App）**，浏览器访问即可使用，同时提供单文件离线演示页，不依赖桌面客户端。正式版评估、优化记录与上线清单见 [docs/production-readiness.md](docs/production-readiness.md)；竞赛竞争力评估与迭代路线见 [docs/competition-readiness.md](docs/competition-readiness.md)。
+**交付形态：网页端应用（Web App）**，浏览器访问即可使用，同时提供单文件离线演示页，不依赖桌面客户端。正式版评估、优化记录与上线清单见 [docs/production-readiness.md](docs/production-readiness.md)；竞赛竞争力评估与迭代路线见 [docs/competition-readiness.md](docs/competition-readiness.md)；提交前行动方案见 [docs/award-sprint-plan.md](docs/award-sprint-plan.md)。
 
 ---
 
@@ -17,7 +17,7 @@
 | 赛道 | 校园生活 ——「造个校园新体验」 |
 | 作品形态 | 可运行的 Web 应用 + 单文件可体验 HTML（`demo.html`） |
 | 体验入口 | 主：https://xueya-production.up.railway.app ｜ 备用：自托管实例（按需提供） ｜ 离线：`public/demo.html` |
-| 源码仓库 | https://github.com/gmt01907240/xueya-market （可申请只读访问，评审通过临时协作者查看；赛后公开） |
+| 源码仓库 | https://github.com/gmt01907240/xueya-market （评审期间提供只读访问；如链接无法打开，可在作品帖留言开通；赛后保持公开） |
 | 创作工具 | 全流程使用 TRAE Work / TRAE IDE 完成 |
 | 评分维度 | 应用价值 30% · 创新性 30% · 技术实现 20% · 交互体验 20% · 决赛表达 10% |
 

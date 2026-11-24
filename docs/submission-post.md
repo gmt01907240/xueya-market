@@ -17,7 +17,7 @@
 | 作品名称 | 学涯集市 · 高校学习资料交易平台 |
 | 参赛赛道 | 校园生活 |
 | 体验地址 | 主：https://xueya-production.up.railway.app ｜ 离线：附件 demo.html |
-| 源码仓库 | https://github.com/gmt01907240/xueya-market （可申请只读访问，评审通过临时协作者查看；赛后公开） |
+| 源码仓库 | https://github.com/gmt01907240/xueya-market （评审期间提供只读访问；如链接无法打开，可在作品帖留言开通；赛后保持公开） |
 | 演示账号 | 买家 student@xueya.cn / Student123456；卖家 seller@xueya.cn / Seller123456 |
 | 技术栈 | Node.js 原生 HTTP + node:sqlite + 原生 ES Modules，零第三方依赖 |
 | 创作工具 | TRAE Work / TRAE IDE |
@@ -62,7 +62,7 @@
 
 ### 3. 试读预览与自动交付
 
-所有资料提供前 10%—20% 试读，禁止复制与下载；支付成功后系统立即开放完整文件，无需人工发放。
+所有资料提供约 10%—20% 的试读节选，试读文本由服务端按全文截断生成；完整文件需购买后在平台内下载，无法通过试读接口获取全文。
 
 > 配图位置：资料详情试读区（发布时插入截图）
 

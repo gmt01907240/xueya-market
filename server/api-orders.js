@@ -30,7 +30,10 @@ function orderView(row, ctx) {
 async function create(ctx) {
   const scope = `orders.create:${ctx.user.id}`;
   const replay = idempotency.replay(ctx, scope);
-  if (replay) return sendJson(ctx.res, replay.statusCode, replay.data);
+  if (replay) {
+    if (replay.conflict) return fail(ctx.res, 409, '该幂等键已用于其他请求，请更换 Idempotency-Key 后重试');
+    return sendJson(ctx.res, replay.statusCode, replay.data);
+  }
   if (!requireVerified(ctx, '购买资料')) return;
   const materialId = Number(ctx.body.materialId);
   const channelCode = String(ctx.body.channel || '').trim();
@@ -43,7 +46,7 @@ async function create(ctx) {
   if (!material) return fail(ctx.res, 404, '资料不存在');
   if (material.status !== 'approved') return fail(ctx.res, 400, '该资料暂不可购买');
   if (material.seller_id === ctx.user.id) return fail(ctx.res, 400, '不能购买自己上传的资料');
-  if (material.price_cents === 0) return fail(ctx.res, 400, '免费资料无需购买，可直接下载');
+  if (material.price_cents === 0) return fail(ctx.res, 400, '免费资料无需下单，登录并完成实名与高校认证后可直接下载');
 
   const existing = get(
     `SELECT id FROM orders WHERE material_id = ? AND buyer_id = ? AND status IN ('completed','refund_requested')`,
@@ -136,9 +139,12 @@ function refund(ctx) {
   if (!order) return fail(ctx.res, 404, '订单不存在');
   if (order.buyer_id !== ctx.user.id) return fail(ctx.res, 403, '无权操作该订单');
   if (order.status !== 'completed') return fail(ctx.res, 400, '当前订单状态不支持申请退款');
+  if (Number(order.refund_attempts || 0) >= 2) {
+    return fail(ctx.res, 429, '该订单退款申请次数已达上限，请提交工单由客服处理');
+  }
   const created = new Date(order.created_at.replace(' ', 'T')).getTime();
   if (Date.now() - created > 7 * 24 * 3600 * 1000) return fail(ctx.res, 400, '订单已超过 7 天退款申请期');
-  run(`UPDATE orders SET status = 'refund_requested' WHERE id = ?`, id);
+  run(`UPDATE orders SET status = 'refund_requested', refund_attempts = refund_attempts + 1 WHERE id = ?`, id);
   sendJson(ctx.res, 200, { message: '退款申请已提交，平台将在 1—3 个工作日内处理' });
 }
 

@@ -3,6 +3,7 @@
 const { all, get, run, now } = require('./db');
 const { sendJson, fail } = require('./http');
 const { requireVerified } = require('./guard');
+const contentAudit = require('./content-audit');
 
 /* ---------------- 求购广场 ---------------- */
 
@@ -37,6 +38,10 @@ function createWant(ctx) {
   if (title.length < 4 || title.length > 60) return fail(ctx.res, 400, '求购标题需为 4—60 个字符');
   if (description.length > 300) return fail(ctx.res, 400, '补充说明不能超过 300 字');
   if (!Number.isFinite(budget) || budget < 0 || budget > 999) return fail(ctx.res, 400, '预算需在 0—999 元之间');
+  const audit = contentAudit.guard(`${title}\n${description}`, {
+    targetType: 'want', targetId: null, userId: ctx.user.id
+  });
+  if (audit.verdict === 'block') return fail(ctx.res, 422, '求购内容未通过平台合规检测，请修改后重试');
   const info = run(
     `INSERT INTO wants (user_id, title, description, category, school, budget_cents, status, created_at)
      VALUES (?, ?, ?, ?, ?, ?, 'open', ?)`,
@@ -105,23 +110,30 @@ function perspectiveOf(row, meId) {
   return 'peer';
 }
 
-function threadView(row, meId) {
+function threadView(row, meId, cache = null) {
   const other = row.user_a === meId
     ? { id: row.user_b, nickname: row.b_nickname, school: row.b_school }
     : { id: row.user_a, nickname: row.a_nickname, school: row.a_school };
-  const last = get(
-    'SELECT content, sender_id, created_at FROM messages WHERE thread_id = ? ORDER BY created_at DESC, id DESC LIMIT 1', row.id
-  );
-  const unread = get(
-    `SELECT COUNT(*) AS c FROM messages WHERE thread_id = ? AND sender_id != ? AND read_at IS NULL`, row.id, meId
-  ).c;
+  let last;
+  let unreadCount;
+  if (cache) {
+    last = cache.last.get(row.id) || null;
+    unreadCount = cache.unread.get(row.id) || 0;
+  } else {
+    last = get(
+      'SELECT content, sender_id, created_at FROM messages WHERE thread_id = ? ORDER BY created_at DESC, id DESC LIMIT 1', row.id
+    );
+    unreadCount = get(
+      `SELECT COUNT(*) AS c FROM messages WHERE thread_id = ? AND sender_id != ? AND read_at IS NULL`, row.id, meId
+    ).c;
+  }
   const context = contextOf(row);
   const scene = sceneMeta(row.scene || (context.type === 'material' ? 'consult' : 'free'));
   return {
     id: row.id,
     other,
     perspective: perspectiveOf(row, meId),
-    unread,
+    unread: unreadCount,
     scene: scene.key,
     sceneText: scene.text,
     context,
@@ -144,7 +156,23 @@ function listThreads(ctx) {
   const rows = all(
     `${THREAD_SELECT} WHERE t.user_a = ? OR t.user_b = ? ORDER BY t.last_message_at DESC`, ctx.user.id, ctx.user.id
   );
-  let items = rows.map((r) => threadView(r, ctx.user.id));
+  // 批量取每个会话的最后一条消息与未读数，避免列表 N+1 查询
+  const cache = { last: new Map(), unread: new Map() };
+  if (rows.length) {
+    const placeholders = rows.map(() => '?').join(',');
+    const ids = rows.map((r) => r.id);
+    for (const item of all(
+      `SELECT m.thread_id, m.content, m.sender_id, m.created_at FROM messages m
+       JOIN (SELECT thread_id, MAX(id) AS id FROM messages WHERE thread_id IN (${placeholders}) GROUP BY thread_id) x
+         ON x.id = m.id`, ...ids
+    )) cache.last.set(item.thread_id, item);
+    for (const item of all(
+      `SELECT thread_id, COUNT(*) AS c FROM messages
+       WHERE thread_id IN (${placeholders}) AND sender_id != ? AND read_at IS NULL GROUP BY thread_id`,
+      ...ids, ctx.user.id
+    )) cache.unread.set(item.thread_id, item.c);
+  }
+  let items = rows.map((r) => threadView(r, ctx.user.id, cache));
   // 直接沟通（无资料/求购上下文，如店铺主页发起）视为双方都可参与，买卖视角均可见
   if (perspective === 'sell') items = items.filter((t) => t.perspective !== 'buy');
   else if (perspective === 'buy') items = items.filter((t) => t.perspective !== 'sell');
@@ -245,6 +273,8 @@ function sendMessage(ctx) {
   const content = String(ctx.body.content || '').trim();
   if (!content) return fail(ctx.res, 400, '请输入消息内容');
   if (content.length > 1000) return fail(ctx.res, 400, '单条消息不能超过 1000 字');
+  const audit = contentAudit.guard(content, { targetType: 'message', targetId: id, userId: ctx.user.id });
+  if (audit.verdict === 'block') return fail(ctx.res, 422, '消息未通过平台合规检测，请修改后重试');
   const ts = now();
   run('INSERT INTO messages (thread_id, sender_id, content, read_at, created_at) VALUES (?, ?, ?, NULL, ?)', id, ctx.user.id, content, ts);
   const scene = String(ctx.body.scene || '').trim();

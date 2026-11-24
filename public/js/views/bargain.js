@@ -79,10 +79,10 @@ export async function renderBargain(root, ctx) {
   }
 
   const o = data.order;
-  const isOwner = !!state.user && state.user.id === o.owner.id;
+  const isOwner = !!state.user && !!o.owner && state.user.id === o.owner.id;
   const idx = catIndex(o.material.category);
   const badge = STATUS_BADGE[o.status] || 'gray';
-  const remaining = Math.max(0, o.currentPrice - o.floorPrice);
+  const remaining = o.floorPrice == null ? 0 : Math.max(0, o.currentPrice - o.floorPrice);
 
   const actions = [];
   if (o.status === 'active') {
@@ -133,7 +133,7 @@ export async function renderBargain(root, ctx) {
           <span class="thumb cover-${idx}">${CAT_GLYPHS[idx]}</span>
           <span class="bargain-material-main">
             <b>${esc(o.material.title)}</b>
-            <span>${esc(o.material.category)} · ${esc(o.material.school || '学涯集市')} · 发起人 ${esc(o.owner.nickname)}</span>
+            <span>${esc(o.material.category)} · ${esc(o.material.school || '学涯集市')} · 发起人 ${esc(o.owner ? o.owner.nickname : '匿名同学')}</span>
           </span>
           ${icon('chevronRight')}
         </a>
@@ -142,7 +142,7 @@ export async function renderBargain(root, ctx) {
           <div class="bargain-price">
             <span class="now">${money(o.currentPrice)}</span>
             <span class="origin">原价 ${money(o.startPrice)}</span>
-            <span class="floor">底价 ${money(o.floorPrice)}</span>
+            ${o.floorPrice == null ? '' : `<span class="floor">底价 ${money(o.floorPrice)}</span>`}
           </div>
           <div class="bargain-saved">已砍 <b>${money(o.saved)}</b></div>
         </div>
@@ -150,7 +150,7 @@ export async function renderBargain(root, ctx) {
         ${progressBar(o.progress)}
         <div class="bargain-progress-labels">
           <span>进度 ${o.progress}%</span>
-          <span>${remaining > 0 ? `距离底价还差 ${money(remaining)}` : '已到达底价'}</span>
+          <span>${o.floorPrice == null ? '由发起人邀请好友共同砍价' : (remaining > 0 ? `距离底价还差 ${money(remaining)}` : '已到达底价')}</span>
         </div>
 
         <div class="bargain-meta">
@@ -180,9 +180,9 @@ export async function renderBargain(root, ctx) {
         <div class="panel panel-pad">
           <div class="bargain-side-head">
             <h3>助力记录</h3>
-            <span class="badge gray">${o.helpers.length} 次</span>
+            <span class="badge gray">${(o.helpers || []).length} 次</span>
           </div>
-          ${o.helpers.length ? `<div class="bargain-helpers">
+          ${(o.helpers || []).length ? `<div class="bargain-helpers">
             ${o.helpers.map((h) => `<div class="bargain-helper">
               ${avatar(h.nickname, 'sm')}
               <div class="bargain-helper-main">
@@ -360,7 +360,7 @@ export async function renderBargains(root) {
             <span class="bargain-item-price">
               <b>${money(o.currentPrice)}</b>
               <s>${money(o.startPrice)}</s>
-              <span>底价 ${money(o.floorPrice)}</span>
+              <span>${o.floorPrice == null ? '' : `底价 ${money(o.floorPrice)}`}</span>
             </span>
             ${progressBar(o.progress, true)}
             <span class="bargain-item-foot">

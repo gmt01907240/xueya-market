@@ -33,6 +33,48 @@ const metrics = require('./metrics');
 const fs = require('node:fs');
 const { UPLOAD_DIR } = require('./paths');
 
+const SENSITIVE_KEY = /password|passwd|token|secret|code|phone|real_?name|student_?no|id_?card|authorization|cookie/i;
+
+/** 审计与日志脱敏：敏感字段整体隐藏，长文本截断，避免把口令/令牌写入数据库 */
+function redact(value, depth = 0) {
+  if (depth > 4) return '[truncated]';
+  if (Array.isArray(value)) return value.slice(0, 20).map((item) => redact(item, depth + 1));
+  if (value && typeof value === 'object') {
+    const out = {};
+    for (const [key, item] of Object.entries(value)) {
+      out[key] = SENSITIVE_KEY.test(key) ? '[redacted]' : redact(item, depth + 1);
+    }
+    return out;
+  }
+  if (typeof value === 'string' && value.length > 500) return `${value.slice(0, 500)}…`;
+  return value;
+}
+
+/** 访问日志只保留网段，降低 IP 作为个人信息的暴露面 */
+function maskIp(ip) {
+  const text = String(ip || '');
+  if (text.includes(':')) {
+    const parts = text.split(':');
+    return parts.length > 2 ? `${parts.slice(0, 2).join(':')}:*` : text;
+  }
+  const parts = text.split('.');
+  return parts.length === 4 ? `${parts[0]}.${parts[1]}.${parts[2]}.*` : text;
+}
+
+// 演示种子数据只允许出现在回环地址或显式演示环境，避免误部署把已知账号带到公网
+if (runtime.SEED_DEMO && !runtime.PUBLIC_DEMO) {
+  const host = String(process.env.HOST || '0.0.0.0').trim();
+  const loopback = ['127.0.0.1', 'localhost', '::1'].includes(host);
+  if (!loopback) {
+    const message = '非回环地址启用了演示种子数据（SEED_DEMO=true），请改用 DEPLOY_PROFILE=public-demo 或设置 SEED_DEMO=false';
+    if (runtime.IS_PRODUCTION) {
+      console.error(`\n  [启动中止] ${message}\n`);
+      process.exit(1);
+    }
+    console.warn(`\n  [安全警告] ${message}\n`);
+  }
+}
+
 init();
 contentAudit.init();
 settlements.backfill();
@@ -111,10 +153,8 @@ add('GET', '/api/metrics', (ctx) => {
   const expected = String(process.env.METRICS_TOKEN || '').trim();
   if (expected) {
     const header = String(ctx.req.headers.authorization || '');
-    const supplied = header.toLowerCase().startsWith('bearer ')
-      ? header.slice(7).trim()
-      : String(ctx.query.token || '').trim();
-    if (!secureEqual(supplied, expected)) return fail(ctx.res, 401, '指标访问令牌无效');
+    const supplied = header.toLowerCase().startsWith('bearer ') ? header.slice(7).trim() : '';
+    if (!supplied || !secureEqual(supplied, expected)) return fail(ctx.res, 401, '指标访问令牌无效');
     return sendJson(ctx.res, 200, { ...metrics.snapshot(), environment: runtime.info() });
   }
   if (runtime.adminAllowed(rateLimit.clientIp(ctx.req))) {
@@ -384,7 +424,7 @@ const server = http.createServer(async (req, res) => {
         path: pathname,
         status: res.statusCode,
         ms: Math.round(ms),
-        ip: rateLimit.clientIp(req),
+        ip: maskIp(rateLimit.clientIp(req)),
         userId: actorId
       }));
     });
@@ -414,6 +454,11 @@ const server = http.createServer(async (req, res) => {
   if (!limited.allowed) {
     res.setHeader('Retry-After', String(limited.retryAfter));
     return fail(res, 429, limited.message);
+  }
+
+  // 公开演示环境的后台入口在未授权网络下直接按“不存在”处理，减少公网探测面
+  if (runtime.PUBLIC_DEMO && pathname.startsWith('/api/admin/') && !runtime.adminAllowed(rateLimit.clientIp(req))) {
+    return fail(res, 404, '接口不存在');
   }
 
   for (const route of routes) {
@@ -457,7 +502,7 @@ const server = http.createServer(async (req, res) => {
           ip: rateLimit.clientIp(req),
           ua: String(req.headers['user-agent'] || ''),
           durationMs: Number(process.hrtime.bigint() - startedAt) / 1e6,
-          detail: { query, params, body }
+          detail: { query: redact(query), params: redact(params), body: redact(body) }
         });
       });
     }
