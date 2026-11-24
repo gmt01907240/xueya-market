@@ -160,8 +160,15 @@
 - `X-Forwarded-Proto: https` 返回 HSTS。
 - `page=99999` 被收敛为 100；分面计数随分类筛选变化。
 
-## 五、上线注意事项
+## 五、上线验证（2026-11-24）
 
-1. Railway 若未注入 `DEPLOY_PROFILE=public-demo`，部署后访问 `/api/health` 查看 `demo` 字段；为 `false` 时需在 Railway Variables 添加 `DEPLOY_PROFILE=public-demo` 并重新部署。
-2. P0-3 仓库可见性需用户按评审要求开通只读访问。
-3. Token 有效期改为 24 小时，旧登录态会在到期后失效，属预期。
+- 提交 `2f5f3d1` 已推送 `main`，Railway 自动构建并上线。
+- `GET /api/health` 返回 `demo:true`，确认 `DEPLOY_PROFILE=public-demo` 已生效，演示行为保持不变。
+- 公网匿名 `GET /api/metrics` 仅返回 `service/status/uptime/time`，全量指标不再公开。
+- `https` 响应包含 `Strict-Transport-Security: max-age=31536000; includeSubDomains`。
+- 线上实测：演示卖家上传返回 201「演示环境免人工审核，已直接上架」，详情 `status=approved`；验证后已删除临时资料。
+
+## 六、遗留事项
+
+1. P0-3 仓库可见性需用户按评审要求开通只读访问或临时协作者权限。
+2. Token 有效期改为 24 小时，旧登录态会在到期后失效，属预期。

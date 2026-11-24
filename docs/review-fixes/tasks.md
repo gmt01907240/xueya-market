@@ -126,8 +126,8 @@
 - [x] **D1** 运行 `npm test`、`npm run test:unit`、`test:audit`、`test:payments`、`test:role`、`test:production`、`test:concurrency`，记录结果。
 - [x] **D2** 本地验证演示上传自动上架与指标鉴权。
 - [x] **D3** 编写 `docs/review-fixes/ledger.md` 整改台账。
-- [ ] **D4** 按问题分组提交；启动本地代理后推送 `main`，等待 Railway 自动部署，复查 `/api/health` 与关键接口。
-- [ ] **D5** 关闭代理，输出整改与回归摘要。
+- [x] **D4** 按问题分组提交；启动本地代理后推送 `main`，等待 Railway 自动部署，复查 `/api/health` 与关键接口。
+- [x] **D5** 关闭代理，输出整改与回归摘要。
 
 ## 备注
 
