@@ -189,7 +189,7 @@ BANK_MCH_ID=... BANK_MERCHANT_KEY=... \
 npm start
 ```
 
-完整参数、回调协议与对账口径见 [docs/payments.md](docs/payments.md)。
+完整参数、回调协议与对账口径见 [docs/payments.md](docs/payments.md)；为什么个人参赛暂不接真实商户、以及生产接入清单见 [docs/payment-readiness.md](docs/payment-readiness.md)。
 
 ### 演示账号
 
