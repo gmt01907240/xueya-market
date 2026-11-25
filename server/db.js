@@ -948,7 +948,7 @@ function seed() {
       desc: '整理时间价值、风险收益、资本成本、投资决策、营运资金管理等章节的核心公式。\n每个公式配一道典型计算题和易错提示，适合期末与 CPA 基础阶段。\n资料为个人整理，正在等待平台审核。' },
     { seller: 'wang', title: '数据结构 实验代码合集（C++ 实现）', category: '课件讲义', school: '华中科技大学', course: '数据结构', price: 21.9, tags: ['数据结构', 'C++', '实验'], views: 0, downloads: 0, days: 0, status: 'pending',
       desc: '包含链表、栈、队列、二叉树、图、排序、查找的完整 C++ 实现与测试用例。\n代码带详细注释，可直接用于课程实验和课程设计。\n正在等待平台审核。' },
-    { seller: 'chen', title: '雅思听力 同义替换词表（盗版整理）', category: '语言学习', school: '武汉大学', course: '雅思', price: 4.9, tags: ['雅思', '听力', '词表'], views: 0, downloads: 0, days: 1, status: 'rejected', reason: '疑似未经授权转载第三方付费资料，请提供版权说明后重新提交。',
+    { seller: 'chen', title: '雅思听力 同义替换词表（来源存疑）', category: '语言学习', school: '武汉大学', course: '雅思', price: 4.9, tags: ['雅思', '听力', '词表'], views: 0, downloads: 0, days: 1, status: 'rejected', reason: '疑似未经授权转载第三方付费资料，请提供版权说明后重新提交。',
       desc: '整理雅思听力高频同义替换词，按场景分类。' }
   ];
 
@@ -1413,6 +1413,8 @@ function ensureAdminSecuritySeed() {
 
 function init() {
   db.exec(SCHEMA);
+  // 修正历史演示数据中的不当措辞，避免公开演示出现侵权暗示
+  db.prepare("UPDATE materials SET title = REPLACE(title, '（盗版整理）', '（来源存疑）') WHERE title LIKE '%（盗版整理）%'").run();
   // 兼容旧库：幂等补充新增字段
   ensureColumn('users', 'real_name', "real_name TEXT NOT NULL DEFAULT ''");
   ensureColumn('users', 'student_no', "student_no TEXT NOT NULL DEFAULT ''");
