@@ -577,6 +577,9 @@ server.listen(PORT, HOST, () => {
     console.log('            seller@xueya.cn  / Seller123456   （个人用户，买家+卖家）');
     console.log('            judge@xueya.cn   / Judge123456    （个人用户，体验账号）');
     console.log(`    管理员登录: 请通过专属入口 http://localhost:${PORT}${ADMIN_LOGIN_PATH}（口令由 ADMIN_INITIAL_PASSWORD 注入，不在此处输出）`);
+    if (!adminSecurity.ADMIN_PASSWORD) {
+      console.warn('  [安全警告] 未配置 ADMIN_INITIAL_PASSWORD，管理员登录不可用；请在部署变量中注入强口令。');
+    }
     if (runtime.IS_PRODUCTION) {
       console.warn('  [安全警告] 生产环境仍启用演示数据，请设置 SEED_DEMO=false 后重新初始化。');
     }

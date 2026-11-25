@@ -11,7 +11,13 @@
 
 const crypto = require('node:crypto');
 
-const ADMIN_PASSWORD = 'XyOps@2026#Secure';
+const NODE_ENV = process.env.NODE_ENV || 'development';
+const PUBLIC_DEMO = /^(1|true|on|yes)$/i.test(String(process.env.PUBLIC_DEMO || ''));
+const DEV_FALLBACK_PASSWORD = 'XyOps@2026#Secure';
+// 生产与公网演示必须显式注入管理员口令；仅在本地开发允许回退到默认值，
+// 避免源码中的默认口令被直接用于线上后台。
+const ADMIN_PASSWORD = String(process.env.ADMIN_INITIAL_PASSWORD || '').trim()
+  || ((NODE_ENV === 'production' || PUBLIC_DEMO) ? '' : DEV_FALLBACK_PASSWORD);
 const ISSUER = '学涯集市';
 const MFA_STEP = 30;
 const MFA_DIGITS = 6;

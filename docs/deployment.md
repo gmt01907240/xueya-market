@@ -140,6 +140,7 @@ docker run -d \
 - `NODE_ENV=staging`，允许模拟支付；支付页明确标注「演示支付 · 不产生真实扣款」。
 - `AUTO_VERIFY=true`，新用户提交实名信息后自动通过，注册即可体验完整买卖链路。
 - `ADMIN_IP_ALLOWLIST=192.0.2.1/32`，公网无法进入管理后台（该地址为保留测试网段）。
+- `ADMIN_INITIAL_PASSWORD=<强口令>`，必须由部署平台注入；缺失时后台登录不可用，源码不再内置线上默认口令。
 - `SEED_DEMO=true`，首次启动写入演示资料，便于立即下单。
 
 ### 切换正式生产
@@ -328,6 +329,7 @@ sudo ufw enable
 | `INVITE_CODES` | 空 | 内测邀请码，格式 `BETA-001:50,BETA-002:100`，留空表示注册不需要邀请码 |
 | `FEATURE_REGISTRATION` 等 | 开启 | 设为 `off`/`false`/`0` 关闭对应功能；支持注册、上传、支付、规划、砍价、AI 客服、工单 |
 | `ADMIN_IP_ALLOWLIST` | 空 | 后台允许来源，支持 IP 与 CIDR，逗号分隔；留空时仅允许本机与私网，公网演示建议设为保留网段以彻底关闭后台 |
+| `ADMIN_INITIAL_PASSWORD` | 空 | 管理员初始口令；生产与公网演示必须显式设置，缺失时后台登录不可用（本地开发才允许使用内置默认值） |
 
 数据库、上传目录与密钥默认位于项目下 `data/`，通过挂载卷持久化；也可用 `DATA_DIR` 指向独立磁盘。
 
@@ -382,6 +384,7 @@ PAYMENT_LIVE_ENABLED=true
 SEED_DEMO=false
 AUTO_VERIFY=false
 ADMIN_MFA_SECRET=<32 字节以上随机串>
+ADMIN_INITIAL_PASSWORD=<强口令，至少 12 位含大小写数字与符号>
 ADMIN_IP_ALLOWLIST=<办公网出口 IP/CIDR>
 # 真实支付渠道参数与 METRICS_TOKEN 按需补充
 ```
