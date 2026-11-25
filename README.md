@@ -6,7 +6,7 @@
 
 本项目参加 **TRAE AI 全国大学生创造力大赛 · 校园生活赛道**。
 
-**交付形态：网页端应用（Web App）**，浏览器访问即可使用，同时提供单文件离线演示页，不依赖桌面客户端。正式版评估、优化记录与上线清单见 [docs/production-readiness.md](docs/production-readiness.md)；竞赛竞争力评估与迭代路线见 [docs/competition-readiness.md](docs/competition-readiness.md)；提交前行动方案见 [docs/award-sprint-plan.md](docs/award-sprint-plan.md)。
+**交付形态：网页端应用（Web App）**，浏览器访问即可使用，同时提供单文件离线演示页，不依赖桌面客户端。正式版评估、优化记录与上线清单见 [docs/production-readiness.md](docs/production-readiness.md)。
 
 ---
 
@@ -21,7 +21,7 @@
 | 创作工具 | 全流程使用 TRAE Work / TRAE IDE 完成 |
 | 评分维度 | 应用价值 30% · 创新性 30% · 技术实现 20% · 交互体验 20% · 决赛表达 10% |
 
-详细的评审维度映射、提交材料清单与验收标准见 [docs/competition-alignment.md](docs/competition-alignment.md)。
+提交材料与演示路径见 [docs/submission-post.md](docs/submission-post.md)。
 
 ---
 
@@ -330,13 +330,10 @@ docker run -d -p 3300:3300 -v xueya-data:/app/data --name xueya xueya-market
 | 文档 | 内容 |
 | --- | --- |
 | [docs/production-readiness.md](docs/production-readiness.md) | 正式版评估、交付形式结论、优化记录、测试与上线清单 |
-| [docs/competition-readiness.md](docs/competition-readiness.md) | 竞赛七维度评估、权重映射、本轮迭代、差距与优化路线 |
 | [docs/launch-plan.md](docs/launch-plan.md) | 从测试到真实用户：环境配置、内测准入、功能开关、灰度、公测清单、验收与回滚 |
 | [docs/release-notes.md](docs/release-notes.md) | v1.1.0 版本说明、变更、升级步骤、测试结果与已知限制 |
 | [docs/release-checklist.md](docs/release-checklist.md) | 发布测试校验清单（18 组测试脚本、交易、上传、支付、监控、回滚） |
 | [docs/compliance-self-check.md](docs/compliance-self-check.md) | 法律法规对照、技术控制自检、残余风险与整改要求 |
-| [docs/optimization-plan.md](docs/optimization-plan.md) | 本轮修改方案、代码结构、功能优化清单 |
-| [docs/competition-alignment.md](docs/competition-alignment.md) | 评审维度映射、提交材料清单、验收标准 |
 | [docs/architecture.md](docs/architecture.md) | 系统架构、数据模型、API、安全与扩展 |
 | [docs/payments.md](docs/payments.md) | 支付方式、接入参数、回调协议、异常处理与对账 |
 | [docs/content-audit.md](docs/content-audit.md) | 内容自动审核规则、分级阈值、日志审计与运维 |
@@ -345,8 +342,7 @@ docker run -d -p 3300:3300 -v xueya-data:/app/data --name xueya xueya-market
 | [docs/deployment.md](docs/deployment.md) | 本地 / Docker / 云主机 / 托管平台部署与运维 |
 | [docs/network-access.md](docs/network-access.md) | 多台电脑局域网访问：监听配置、防火墙放行、备份、故障排查与公网说明 |
 | [docs/roadmap.md](docs/roadmap.md) | 版本迭代规划与技术债 |
-| [docs/submission-post.md](docs/submission-post.md) | 社区作品帖模板（含创作过程占位） |
-| [docs/demo-script.md](docs/demo-script.md) | 3 分钟路演脚本与评委问答 |
+| [docs/submission-post.md](docs/submission-post.md) | 社区作品帖与演示动线 |
 
 ---
 
